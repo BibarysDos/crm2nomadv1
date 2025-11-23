@@ -7,9 +7,10 @@ import DocType from '../dictionary/DocType';
 import IssuedBy from '../dictionary/IssuedBy';
 import ClientType from '../dictionary/ClientType';
 import { getPerson, mapApiDataToForm } from '../../services/personService';
-import { savePolicyholderData, loadPolicyholderData, loadGlobalApplicationData, updateGlobalApplicationSection, saveApplicationMetadata, loadApplicationMetadata } from '../../services/storageService';
+import { saveApplicationMetadata, loadApplicationMetadata, getAccessToken } from '../../services/storageService';
+import { getContragent, updateContragent, getProcessInstanceDetails } from '../../services/processService';
 
-const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => {
+const Policyholder = ({ onBack, onSave, applicationId, taskId }) => {
   const [currentView, setCurrentView] = useState('main');
 
   // Единый объект состояния с правильными названиями полей
@@ -65,72 +66,21 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
   // Состояние ошибки
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Загрузка данных из глобального хранилища или localStorage при монтировании компонента
+  // Состояние для хранения ID контрагента
+  const [contragentId, setContragentId] = useState(null);
+  
+  // Состояние для хранения ID связи контрагента из ProcessInstance (id из массива contragents)
+  const [contragentRelationId, setContragentRelationId] = useState(null);
+  
+  // Состояние для хранения identifier (ИИН) из загруженного контрагента
+  const [loadedContragentIdentifier, setLoadedContragentIdentifier] = useState(null);
+  
+  // Состояние загрузки контрагента из API
+  const [isLoadingContragent, setIsLoadingContragent] = useState(false);
+
+  // НЕ загружаем данные из global storage - используем только локальное состояние
+  // Данные загружаются только из API при монтировании компонента (через useEffect для loadContragent)
   useEffect(() => {
-    // Сначала проверяем глобальное хранилище
-    const globalData = loadGlobalApplicationData(applicationId);
-    let savedData = null;
-    
-    if (globalData && globalData.Policyholder) {
-      savedData = globalData.Policyholder;
-      console.log('📖 [СТРАХОВАТЕЛЬ] Загружено из глобального хранилища:', savedData);
-    } else {
-      // Если в глобальном хранилище нет, загружаем из старого хранилища
-      savedData = loadPolicyholderData(applicationId);
-      if (savedData) {
-        console.log('📖 [СТРАХОВАТЕЛЬ] Загружено из старого хранилища:', savedData);
-        // Сохраняем в глобальное хранилище для миграции
-        updateGlobalApplicationSection('Policyholder', savedData, applicationId);
-      }
-    }
-    
-    if (savedData) {
-      // Миграция старых данных в новую структуру
-      if (savedData.fieldValues || savedData.dateValues || savedData.dictionaryValues) {
-        const migratedData = {
-          // Миграция основных полей
-          iin: savedData.fieldValues?.iin || savedData.iin || '',
-          telephone: savedData.fieldValues?.phone || savedData.telephone || '',
-          name: savedData.fieldValues?.firstName || savedData.name || '',
-          surname: savedData.fieldValues?.lastName || savedData.surname || '',
-          patronymic: savedData.fieldValues?.middleName || savedData.patronymic || '',
-          // Миграция адреса
-          street: savedData.fieldValues?.street || savedData.street || '',
-          houseNumber: savedData.fieldValues?.houseNumber || savedData.houseNumber || '',
-          apartmentNumber: savedData.fieldValues?.apartmentNumber || savedData.apartmentNumber || '',
-          // Миграция документа
-          docNumber: savedData.fieldValues?.documentNumber || savedData.docNumber || '',
-          // Миграция дат
-          birthDate: savedData.dateValues?.birthDate || savedData.birthDate || '',
-          issueDate: savedData.dateValues?.issueDate || savedData.issueDate || '',
-          expiryDate: savedData.dateValues?.expiryDate || savedData.expiryDate || '',
-          // Миграция справочников
-          gender: savedData.dictionaryValues?.gender || savedData.gender || '',
-          economSecId: savedData.dictionaryValues?.sectorCode || savedData.economSecId || '',
-          countryId: savedData.dictionaryValues?.country || savedData.countryId || '',
-          district_nameru: savedData.district_nameru || '',
-          settlementName: savedData.settlementName || savedData.dictionaryValues?.region || savedData.region_id || '',
-          vidDocId: savedData.dictionaryValues?.docType || savedData.vidDocId || '',
-          issuedBy: savedData.dictionaryValues?.issuedBy || savedData.issuedBy || '',
-          clientType: savedData.dictionaryValues?.clientType || savedData.clientType || ''
-        };
-        setPolicyholderData(migratedData);
-      } else if (savedData.iin || savedData.name) {
-        // Если данные уже в новом формате
-        setPolicyholderData(prev => ({ ...prev, ...savedData }));
-      }
-      if (savedData.toggleStates) {
-        setToggleStates(savedData.toggleStates);
-      }
-      // Устанавливаем autoModeState: если сохранен - используем его, иначе если есть данные - data_loaded
-      if (savedData.autoModeState) {
-        setAutoModeState(savedData.autoModeState);
-      } else if (savedData.iin && savedData.telephone) {
-        // Если данных нет в сохраненном autoModeState, но есть данные, устанавливаем data_loaded
-        setAutoModeState('data_loaded');
-      }
-    }
-    
     setIsInitialLoad(false);
   }, [applicationId]);
 
@@ -146,6 +96,169 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
       }
     }
   }, [policyholderData.iin, applicationId, isInitialLoad]);
+
+  // Загрузка контрагента из API при монтировании или изменении applicationId
+  // Загружаем данные сразу при открытии заявки, если есть контрагент в ProcessInstance
+  useEffect(() => {
+    console.log('🔄 [POLICYHOLDER] useEffect сработал, applicationId:', applicationId);
+    const loadContragent = async () => {
+      if (!applicationId) {
+        console.log('⚠️ [POLICYHOLDER] applicationId отсутствует, пропускаем загрузку');
+        return;
+      }
+
+      try {
+        console.log('🔄 [POLICYHOLDER] Начинаем загрузку контрагента для applicationId:', applicationId);
+        setIsLoadingContragent(true);
+        const token = getAccessToken();
+        if (!token) {
+          console.log('⚠️ [POLICYHOLDER] Токен не найден, пропускаем загрузку контрагента');
+          setIsLoadingContragent(false);
+          return;
+        }
+        console.log('✅ [POLICYHOLDER] Токен найден, продолжаем загрузку');
+
+        // ВАЖНО: Сначала получаем ProcessInstance, чтобы проверить contragents
+        let contragentIdToLoad = null;
+        
+        try {
+          const processInstance = await getProcessInstanceDetails(applicationId, token);
+          console.log('📋 [PROCESS INSTANCE] Получены данные процесса:', processInstance);
+          
+          // Проверяем массив contragents на наличие контрагента с ролью client
+          if (processInstance?.contragents && Array.isArray(processInstance.contragents)) {
+            const clientContragent = processInstance.contragents.find(
+              c => c.contragentRoleCode === 'client'
+            );
+            
+            if (clientContragent) {
+              // Используем id контрагента из ProcessInstance (это id связи контрагента с заявкой)
+              contragentIdToLoad = clientContragent.id;
+              console.log('✅ [CONTRAGENT] Найден контрагент с ролью client в ProcessInstance:', clientContragent);
+              console.log('🔍 [CONTRAGENT] contragentIdToLoad:', contragentIdToLoad, 'applicationId:', applicationId);
+              
+              // Сохраняем id связи контрагента с заявкой (нужен для обновления)
+              setContragentRelationId(clientContragent.id);
+              // Сохраняем identifier из контрагента (нужен для обновления)
+              if (clientContragent.identifier) {
+                setLoadedContragentIdentifier(clientContragent.identifier);
+              }
+              
+              // Если в ProcessInstance есть контрагент, но его детали (address, detail, etc.) равны null,
+              // нужно загрузить полные данные через getContragent
+              const needsFullData = !clientContragent.address && !clientContragent.detail && !clientContragent.identityDoc;
+              console.log('🔍 [CONTRAGENT] needsFullData:', needsFullData, 'address:', clientContragent.address, 'detail:', clientContragent.detail, 'identityDoc:', clientContragent.identityDoc);
+              
+              if (needsFullData && contragentIdToLoad && applicationId) {
+                // Загружаем полные данные контрагента через Contragent_GET
+                console.log('📥 [CONTRAGENT] Загружаем полные данные контрагента через getContragent...');
+                try {
+                  const contragentData = await getContragent(contragentIdToLoad, applicationId, token);
+                  console.log('📥 [CONTRAGENT] Получены данные контрагента из getContragent:', contragentData);
+                  if (contragentData) {
+                    // Преобразуем данные контрагента в формат формы
+                    const mappedData = mapContragentToPolicyholder(contragentData);
+                    console.log('📥 [CONTRAGENT] Преобразованные данные для формы:', mappedData);
+                    // Сразу показываем данные в полях (не мержим с предыдущими)
+                    setPolicyholderData(mappedData);
+                    // Сохраняем id контрагента (из ответа API)
+                    setContragentId(contragentData.id || contragentIdToLoad);
+                    // Сохраняем identifier из загруженного контрагента (нужен для обновления)
+                    if (contragentData.identifier) {
+                      setLoadedContragentIdentifier(contragentData.identifier);
+                    }
+                    // Устанавливаем состояние "данные загружены"
+                    setAutoModeState('data_loaded');
+                    // Уведомляем родительский компонент о загруженных данных
+                    if (onSave) {
+                      onSave(mappedData);
+                    }
+                    console.log('✅ [CONTRAGENT] Данные контрагента загружены из API через Contragent_GET и отображены в полях');
+                  }
+                } catch (error) {
+                  console.error('❌ [CONTRAGENT] Ошибка загрузки полных данных контрагента:', error);
+                  console.error('❌ [CONTRAGENT] Детали ошибки:', error.message, error.stack);
+                  // Если контрагент не найден, но есть базовые данные в ProcessInstance, используем их
+                  if (clientContragent.identifier || clientContragent.longName) {
+                    console.log('⚠️ [CONTRAGENT] Используем базовые данные из ProcessInstance');
+                    const basicData = {
+                      iin: clientContragent.identifier || '',
+                      name: '',
+                      surname: '',
+                      patronymic: '',
+                      telephone: '',
+                      street: '',
+                      houseNumber: '',
+                      apartmentNumber: '',
+                      docNumber: '',
+                      birthDate: '',
+                      issueDate: '',
+                      expiryDate: '',
+                      gender: '',
+                      economSecId: '',
+                      countryId: '',
+                      district_nameru: '',
+                      settlementName: '',
+                      vidDocId: '',
+                      issuedBy: '',
+                      clientType: ''
+                    };
+                    // Пытаемся извлечь имя из longName
+                    if (clientContragent.longName) {
+                      const nameParts = clientContragent.longName.trim().split(/\s+/);
+                      if (nameParts.length >= 1) basicData.surname = nameParts[0] || '';
+                      if (nameParts.length >= 2) basicData.name = nameParts[1] || '';
+                      if (nameParts.length >= 3) basicData.patronymic = nameParts.slice(2).join(' ') || '';
+                    }
+                    setPolicyholderData(basicData);
+                    setContragentId(clientContragent.id);
+                    if (clientContragent.identifier) {
+                      setLoadedContragentIdentifier(clientContragent.identifier);
+                    }
+                    setAutoModeState('data_loaded');
+                    // Уведомляем родительский компонент о загруженных данных
+                    if (onSave) {
+                      onSave(basicData);
+                    }
+                    console.log('✅ [CONTRAGENT] Базовые данные контрагента загружены из ProcessInstance');
+                  }
+                }
+              } else if (!needsFullData && clientContragent) {
+                // Если в ProcessInstance есть полные данные контрагента, используем их напрямую
+                console.log('📥 [CONTRAGENT] Используем полные данные из ProcessInstance');
+                const mappedData = mapContragentToPolicyholder(clientContragent);
+                console.log('📥 [CONTRAGENT] Преобразованные данные для формы:', mappedData);
+                setPolicyholderData(mappedData);
+                setContragentId(clientContragent.id);
+                if (clientContragent.identifier) {
+                  setLoadedContragentIdentifier(clientContragent.identifier);
+                }
+                setAutoModeState('data_loaded');
+                // Уведомляем родительский компонент о загруженных данных
+                if (onSave) {
+                  onSave(mappedData);
+                }
+                console.log('✅ [CONTRAGENT] Данные контрагента загружены из ProcessInstance и отображены в полях');
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [PROCESS INSTANCE] Не удалось получить ProcessInstance:', error.message);
+          // Продолжаем без загрузки контрагента
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки контрагента:', error);
+      } finally {
+        setIsLoadingContragent(false);
+      }
+    };
+
+    // Загружаем данные сразу при открытии заявки (не ждем isInitialLoad)
+    if (applicationId) {
+      loadContragent();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationId]);
 
   // Маппинг старых названий полей справочников на новые
   const getDictionaryFieldName = (oldName) => {
@@ -167,6 +280,401 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
       'family': 'Член семьи'
     };
     return mapping[value] || value;
+  };
+
+  // Функция для получения кода из объекта справочника (поддержка старого формата)
+  const getCodeFromDictionaryValue = (value) => {
+    if (!value) return '';
+    if (typeof value === 'object') {
+      return value.code || value.id || '';
+    }
+    return value;
+  };
+
+  // Функция для получения названия из объекта справочника
+  const getNameFromDictionaryValue = (value) => {
+    if (!value) return '';
+    if (typeof value === 'object') {
+      return value.nameRu || value.nameKz || value.code || '';
+    }
+    return value;
+  };
+
+  // Функция для нормализации даты в формат YYYY-MM-DD (System.DateOnly)
+  const normalizeDate = (dateValue) => {
+    // Обрабатываем пустые значения
+    if (!dateValue || dateValue === '' || dateValue === null || dateValue === undefined) {
+      return null;
+    }
+    
+    // Если уже в формате YYYY-MM-DD, возвращаем как есть
+    const trimmed = String(dateValue).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    
+    // Если дата в формате YYYY-MM-DD с временем (например, "2010-01-15T00:00:00"), берем только дату
+    const dateOnlyMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (dateOnlyMatch) {
+      return dateOnlyMatch[1];
+    }
+    
+    // Пытаемся распарсить дату
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) {
+        return null;
+      }
+      // Форматируем в YYYY-MM-DD (System.DateOnly формат)
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch (e) {
+      console.warn('Ошибка парсинга даты:', dateValue, e);
+      return null;
+    }
+  };
+
+  // Функция для преобразования даты из YYYY-MM-DD в DD.MM.YYYY (для отображения в форме)
+  const formatDateForDisplay = (dateValue) => {
+    if (!dateValue || dateValue === '' || dateValue === null || dateValue === undefined) {
+      return '';
+    }
+    
+    const trimmed = String(dateValue).trim();
+    
+    // Если дата в формате YYYY-MM-DD
+    const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymdMatch) {
+      const [, year, month, day] = ymdMatch;
+      return `${day}.${month}.${year}`;
+    }
+    
+    // Если дата уже в формате DD.MM.YYYY, возвращаем как есть
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(trimmed)) {
+      return trimmed;
+    }
+    
+    // Пытаемся распарсить дату
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) {
+        return '';
+      }
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}.${month}.${year}`;
+    } catch (e) {
+      console.warn('Ошибка форматирования даты для отображения:', dateValue, e);
+      return '';
+    }
+  };
+
+  // Маппинг данных Policyholder в формат Contragent API
+  const mapPolicyholderToContragent = (data, contragentId = null, contragentRelationId = null, loadedIdentifier = null) => {
+    // Получаем код страны из объекта или строки
+    let countryCode = getCodeFromDictionaryValue(data.countryId);
+    const countryName = getNameFromDictionaryValue(data.countryId);
+    
+    // Проверяем, что countryCode - это действительно код (2-3 символа), а не название
+    // Если это название (длинная строка), то не используем его как код
+    if (countryCode && countryCode.length > 3) {
+      // Это название, а не код - очищаем
+      countryCode = '';
+    }
+    
+    // Если страна выбрана из справочника (есть countryId), но код не найден,
+    // используем значение по умолчанию 'KZ' (Казахстан) и считаем резидентом
+    const hasCountrySelected = data.countryId && (typeof data.countryId === 'object' || data.countryId);
+    if (hasCountrySelected && !countryCode) {
+      countryCode = 'KZ'; // По умолчанию Казахстан, если страна выбрана, но код не найден
+    }
+    
+    // Получаем коды других справочников
+    // Получаем код пола - проверяем, что это код, а не название
+    let genderCode = getCodeFromDictionaryValue(data.gender);
+    const genderName = getNameFromDictionaryValue(data.gender);
+    
+    // Маппинг названий полов на коды (API требует коды "male"/"female", а не названия)
+    const genderMapping = {
+      'Мужской': 'male',
+      'Женский': 'female',
+      'male': 'male',
+      'female': 'female'
+    };
+    
+    // Если genderCode - это название (не "male" или "female"), пытаемся найти код в маппинге
+    if (genderCode && genderCode !== 'male' && genderCode !== 'female') {
+      genderCode = genderMapping[genderCode] || '';
+    }
+    
+    // Если кода все еще нет, но есть название, пытаемся найти код по названию
+    if (!genderCode && genderName) {
+      genderCode = genderMapping[genderName] || '';
+    }
+    
+    // Получаем код сектора экономики - извлекаем только код (например, "9" из "9 - Домашние хозяйства/физическое лицо")
+    let economicSectorCode = getCodeFromDictionaryValue(data.economSecId);
+    let economicSectorName = getNameFromDictionaryValue(data.economSecId);
+    
+    // Если economicSectorCode содержит " - ", извлекаем только код до дефиса
+    if (economicSectorCode && typeof economicSectorCode === 'string' && economicSectorCode.includes(' - ')) {
+      const codePart = economicSectorCode.split(' - ')[0].trim();
+      // Проверяем, что это действительно код (число)
+      if (/^\d+$/.test(codePart)) {
+        economicSectorCode = codePart;
+      }
+    }
+    
+    // Убираем код из названия сектора экономики (если название содержит "9 - ", убираем эту часть)
+    if (economicSectorName && typeof economicSectorName === 'string' && economicSectorName.includes(' - ')) {
+      economicSectorName = economicSectorName.split(' - ').slice(1).join(' - ').trim();
+    }
+    
+    // Если economicSectorCode - это длинная строка без дефиса, возможно это название, пытаемся найти код
+    if (economicSectorCode && typeof economicSectorCode === 'string' && economicSectorCode.length > 10 && !economicSectorCode.includes(' - ')) {
+      // Маппинг названий секторов на коды
+      const sectorMapping = {
+        'Правительство Республики Казахстан или Правительство иностранного государства': '1',
+        'Региональные и местные органы управления': '2',
+        'Центральный (национальный) банк': '3',
+        'Другие депозитные организации': '4',
+        'Другие финансовые организации': '5',
+        'Государственные нефинансовые организации': '6',
+        'Негосударственные нефинансовые организации': '7',
+        'Некоммерческие организации, обслуживающие домашние хозяйства': '8',
+        'Домашние хозяйства/физическое лицо': '9'
+      };
+      economicSectorCode = sectorMapping[economicSectorCode] || '';
+    }
+    // Получаем код типа документа - проверяем, что это код, а не название
+    let docTypeCode = getCodeFromDictionaryValue(data.vidDocId);
+    const docTypeName = getNameFromDictionaryValue(data.vidDocId);
+    
+    // Маппинг названий типов документов на коды (API требует коды, а не названия)
+    const docTypeMapping = {
+      'Удостоверение личности': '1',
+      'Паспорт': '2',
+      'Свидетельство о рождении': '3',
+      'Вид на жительство иностранца': '4'
+    };
+    
+    // Если docTypeCode - это название (длинная строка или не является числом), пытаемся найти код в маппинге
+    if (docTypeCode) {
+      // Проверяем, является ли это кодом (короткая строка, обычно 1-2 символа) или названием
+      if (docTypeCode.length > 10 || isNaN(docTypeCode)) {
+        // Это название, пытаемся найти код
+        docTypeCode = docTypeMapping[docTypeCode] || '';
+      }
+    }
+    
+    // Если кода все еще нет, но есть название, пытаемся найти код по названию
+    if (!docTypeCode && docTypeName) {
+      docTypeCode = docTypeMapping[docTypeName] || '';
+    }
+    // Получаем код органа выдачи - проверяем, что это код, а не название
+    let issuerCode = getCodeFromDictionaryValue(data.issuedBy);
+    const issuerName = getNameFromDictionaryValue(data.issuedBy);
+    
+    // Маппинг названий органов выдачи на коды (API требует коды, а не названия)
+    const issuerMapping = {
+      'Министерство внутренних дел Республики Казахстан': '1',
+      'МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК': '1',
+      'МВД РК': '1',
+      'Министерство юстиции Республики Казахстан': '2',
+      'Запись актов гражданского состояния': '3',
+      'ЗАГС': '3'
+    };
+    
+    // Функция для поиска кода по названию (с учетом регистра)
+    const findIssuerCode = (name) => {
+      if (!name) return '';
+      // Прямое совпадение
+      if (issuerMapping[name]) {
+        return issuerMapping[name];
+      }
+      // Поиск без учета регистра
+      const nameLower = name.toLowerCase();
+      for (const [key, value] of Object.entries(issuerMapping)) {
+        if (key.toLowerCase() === nameLower) {
+          return value;
+        }
+      }
+      // Поиск по частичному совпадению (для "МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК")
+      if (nameLower.includes('внутренних дел') || nameLower.includes('мвд')) {
+        return '1';
+      }
+      if (nameLower.includes('юстиции')) {
+        return '2';
+      }
+      if (nameLower.includes('загс') || nameLower.includes('актов гражданского')) {
+        return '3';
+      }
+      return '';
+    };
+    
+    // Если issuerCode - это название (длинная строка), пытаемся найти код в маппинге
+    if (issuerCode) {
+      // Проверяем, является ли это кодом (короткая строка) или названием
+      if (issuerCode.length > 10 || isNaN(issuerCode)) {
+        // Это название, пытаемся найти код
+        issuerCode = findIssuerCode(issuerCode);
+      }
+    }
+    
+    // Если кода все еще нет, но есть название, пытаемся найти код по названию
+    if (!issuerCode && issuerName) {
+      issuerCode = findIssuerCode(issuerName);
+    }
+
+    // API требует identifier для поиска или создания контрагента
+    // Используем ИИН из данных, или identifier из загруженного контрагента, если ИИН пустой
+    const contragentIdentifier = (data.iin || loadedIdentifier || '').trim();
+    
+    // Если нет contragentId и нет identifier - это ошибка
+    if (!contragentId && !contragentIdentifier) {
+      throw new Error('Необходимо указать либо contragentId контрагента, либо ИИН (identifier)');
+    }
+
+    // Определяем резидентность: если страна выбрана из справочника - всегда резидент
+    // API требует residentTypeCode в нижнем регистре: "resident" или "nonResident" (как в Postman примере)
+    // ВАЖНО: все из справочников берем как резидента
+    const residentTypeCode = hasCountrySelected ? 'resident' : 'nonResident';
+    
+    // Формируем полное имя (LongName обязателен для создания нового контрагента)
+    const longName = `${data.surname || ''} ${data.name || ''} ${data.patronymic || ''}`.trim();
+    
+    // Формируем объекты только если есть данные
+    const addressData = {
+      countryCode: countryCode || 'KZ', // Обязательное поле, по умолчанию KZ если не указано
+      ...(countryName ? { countryName: countryName } : {}),
+      ...(data.district_nameru ? { region: data.district_nameru } : {}),
+      ...(data.settlementName ? { city: data.settlementName } : {}),
+      ...(data.street ? { street: data.street } : {}),
+      ...(data.houseNumber ? { building: data.houseNumber } : {}),
+      ...(data.apartmentNumber ? { flat: data.apartmentNumber } : {}),
+    };
+
+    const identityDocData = {
+      ...(docTypeCode ? { identityDocTypeCode: docTypeCode } : {}),
+      ...(docTypeName ? { identityDocTypeName: docTypeName } : {}),
+      ...(data.docNumber ? { number: data.docNumber } : {}),
+      ...(issuerCode ? { identityDocIssuerCode: issuerCode } : {}),
+      ...(issuerName ? { identityDocIssuerName: issuerName } : {}),
+      // API требует формат DateOnly (YYYY-MM-DD), не принимает null - отправляем только если дата есть
+      ...(normalizeDate(data.issueDate) ? { issuedDate: normalizeDate(data.issueDate) } : {}),
+      ...(normalizeDate(data.expiryDate) ? { expireDate: normalizeDate(data.expiryDate) } : {}),
+    };
+
+    const detailData = {
+      ...(data.surname ? { lastName: data.surname } : {}),
+      ...(data.name ? { firstName: data.name } : {}),
+      ...(data.patronymic ? { middleName: data.patronymic } : {}),
+      // API требует формат DateOnly (YYYY-MM-DD), не принимает null - отправляем только если дата есть
+      ...(normalizeDate(data.birthDate) ? { birthDate: normalizeDate(data.birthDate) } : {}),
+        ...(genderCode ? { genderCode: genderCode } : {}),
+        ...(genderName ? { genderName: genderName } : {}),
+        ...(economicSectorCode ? { economicSectorCode: economicSectorCode } : {}),
+        // economicSectorName уже очищен от кода выше
+        ...(economicSectorName ? { economicSectorName: economicSectorName } : {}),
+    };
+
+    const contragentData = {
+      // Если есть id связи контрагента с заявкой (из ProcessInstance), добавляем его для обновления
+      ...(contragentRelationId ? { id: contragentRelationId } : {}),
+      contragentTypeCode: 'individual', // Тип контрагента: individual (физическое лицо) или legal (юридическое лицо)
+      residentTypeCode: residentTypeCode, // Тип резидентства: resident (резидент) или nonResident (нерезидент) - в нижнем регистре
+      contragentRoleCode: 'client',
+      contragentRoleName: 'Клиент',
+      longName: longName || '', // Обязательное поле для создания нового контрагента (в нижнем регистре, как в Postman)
+      ...(Object.keys(addressData).length > 1 ? { address: addressData } : {}), // Отправляем address только если есть данные (кроме countryCode)
+      ...(data.telephone ? {
+        contacts: [{
+          contactTypeCode: 'mobile',
+          contactTypeName: 'Мобильный телефон',
+          value: data.telephone
+        }]
+      } : {}),
+      // Отправляем identityDoc только если есть хотя бы одно поле
+      ...(Object.keys(identityDocData).length > 0 ? { identityDoc: identityDocData } : {}),
+      // Отправляем detail только если есть хотя бы одно поле
+      ...(Object.keys(detailData).length > 0 ? { detail: detailData } : {}),
+    };
+
+    // API требует identifier для поиска или создания контрагента (в нижнем регистре, как в Postman)
+    if (contragentIdentifier) {
+      contragentData.identifier = contragentIdentifier;
+    }
+
+    return contragentData;
+  };
+
+  // Маппинг данных Contragent API в формат Policyholder
+  const mapContragentToPolicyholder = (contragentData) => {
+    if (!contragentData) return {};
+
+    const address = contragentData.address || {};
+    const detail = contragentData.detail || {};
+    const identityDoc = contragentData.identityDoc || {};
+    
+    // Находим мобильный телефон в контактах
+    const mobileContact = contragentData.contacts?.find(c => c.contactTypeCode === 'mobile');
+    
+    // Формируем объект страны из API
+    const countryValue = address.countryCode ? {
+      code: address.countryCode,
+      nameRu: address.countryName || address.countryCode
+    } : null;
+
+    // Формируем название сектора экономики с кодом: "9 - Домашние хозяйства/физическое лицо"
+    const economicSectorName = detail.economicSectorName || '';
+    const economicSectorCode = detail.economicSectorCode || '';
+    const economicSectorDisplayName = economicSectorCode && economicSectorName 
+      ? `${economicSectorCode} - ${economicSectorName}`
+      : economicSectorName || economicSectorCode || '';
+
+    return {
+      iin: contragentData.identifier || contragentData.contragentIdentifier || '',
+      telephone: mobileContact?.value || '',
+      name: detail.firstName || '',
+      surname: detail.lastName || '',
+      patronymic: detail.middleName || '',
+      street: address.street || '',
+      houseNumber: address.building || '',
+      apartmentNumber: address.flat || '',
+      docNumber: identityDoc.number || '',
+      // Преобразуем даты из YYYY-MM-DD в DD.MM.YYYY для отображения в форме
+      birthDate: formatDateForDisplay(detail.birthDate || ''),
+      issueDate: formatDateForDisplay(identityDoc.issuedDate || ''),
+      expiryDate: formatDateForDisplay(identityDoc.expireDate || ''),
+      // Справочники - сохраняем как объекты если есть код и название
+      gender: detail.genderCode ? {
+        code: detail.genderCode,
+        nameRu: detail.genderName || detail.genderCode
+      } : '',
+      economSecId: detail.economicSectorCode ? {
+        code: detail.economicSectorCode,
+        nameRu: economicSectorDisplayName
+      } : '',
+      countryId: countryValue,
+      // Используем region вместо district для области
+      district_nameru: address.region || address.district || '',
+      settlementName: address.city || '',
+      vidDocId: identityDoc.identityDocTypeCode ? {
+        code: identityDoc.identityDocTypeCode,
+        nameRu: identityDoc.identityDocTypeName || identityDoc.identityDocTypeCode
+      } : '',
+      issuedBy: identityDoc.identityDocIssuerCode ? {
+        code: identityDoc.identityDocIssuerCode,
+        nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
+      } : '',
+      // Тип клиента - это отдельное поле, не contragentRoleCode (который всегда "client" для страхователя)
+      // Если в API есть отдельное поле для типа клиента, используем его, иначе оставляем пустым
+      // Пользователь должен выбрать тип клиента вручную: "Иные лица", "Работник" или "Член семьи"
+      clientType: contragentData.clientType || contragentData.insuredType || ''
+    };
   };
 
   // Обработчик для сохранения выбранных значений из справочников
@@ -430,7 +938,7 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
   };
 
   // Определение действия кнопки в заголовке
-  const handleHeaderButtonClick = () => {
+  const handleHeaderButtonClick = async () => {
     // Если ручной ввод включен - сохраняем данные
     if (toggleStates.manualInput) {
       const dataToSave = {
@@ -442,13 +950,98 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
       const saveData = {
         ...policyholderData,
         toggleStates,
-        autoModeState
+        autoModeState,
+        contragentId, // Сохраняем ID контрагента
+        contragentRelationId // Сохраняем ID связи контрагента с заявкой
       };
       console.log('💾 [СТРАХОВАТЕЛЬ] Сохранение по кнопке (ручной ввод):', saveData);
-      // Сохраняем в глобальное хранилище
-      updateGlobalApplicationSection('Policyholder', saveData, applicationId);
-      // Также сохраняем в старое хранилище для обратной совместимости
-      savePolicyholderData(saveData, applicationId);
+      
+      // Сохраняем в API через Contragent PUT
+      if (applicationId) {
+        try {
+          const token = getAccessToken();
+          if (token) {
+            // API требует именно taskId, а не applicationId (processInstanceId)
+            // Если taskId отсутствует или равен applicationId, пытаемся получить его из метаданных или processInstance
+            let actualTaskId = taskId;
+            if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
+              // Пытаемся получить taskId из метаданных
+              const metadata = loadApplicationMetadata(applicationId);
+              if (metadata?.taskId && metadata.taskId !== applicationId) {
+                actualTaskId = metadata.taskId;
+                console.log('🔍 [CONTRAGENT] taskId получен из метаданных:', actualTaskId);
+              } else {
+                // Пытаемся получить taskId из processInstance (если он уже загружен)
+                try {
+                  const processInstance = await getProcessInstanceDetails(applicationId, token);
+                  // Проверяем, есть ли в processInstance поле taskId или tasks массив
+                  if (processInstance?.taskId && processInstance.taskId !== applicationId) {
+                    actualTaskId = processInstance.taskId;
+                    console.log('🔍 [CONTRAGENT] taskId получен из processInstance:', actualTaskId);
+                  } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
+                    // Берем первый taskId из массива tasks
+                    const firstTask = processInstance.tasks[0];
+                    if (firstTask?.id && firstTask.id !== applicationId) {
+                      actualTaskId = firstTask.id;
+                      console.log('🔍 [CONTRAGENT] taskId получен из processInstance.tasks:', actualTaskId);
+                    }
+                  }
+                } catch (error) {
+                  console.warn('⚠️ [CONTRAGENT] Не удалось получить processInstance для поиска taskId:', error.message);
+                }
+              }
+            }
+            
+            console.log('🔍 [CONTRAGENT] taskId:', actualTaskId, 'applicationId:', applicationId, 'taskId из props:', taskId);
+            
+            // Определяем accessId для API: если taskId найден и не равен applicationId, используем его, иначе используем applicationId
+            // Согласно Postman примеру, accessId может быть как taskId, так и applicationId (processInstanceId)
+            let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
+            
+            if (!accessIdForAPI || accessIdForAPI.trim() === '') {
+              console.warn('⚠️ [CONTRAGENT] accessId не найден, пропускаем сохранение контрагента в API. Данные сохранены локально.');
+            } else {
+              try {
+                // Преобразуем данные в формат API
+                const contragentData = mapPolicyholderToContragent(policyholderData, contragentId, contragentRelationId, loadedContragentIdentifier);
+                
+                // Логируем данные перед отправкой для диагностики
+                console.log('📤 [CONTRAGENT] Отправка данных контрагента в API с accessId:', accessIdForAPI);
+                console.log('📤 [CONTRAGENT] Данные контрагента:', JSON.stringify(contragentData, null, 2));
+                
+                // Вызываем PUT для сохранения/обновления контрагента (используем accessIdForAPI как accessId в URL)
+                const savedContragent = await updateContragent(contragentData, accessIdForAPI.trim(), token);
+                
+                // Сохраняем ID контрагента из ответа
+                if (savedContragent?.id) {
+                  setContragentId(savedContragent.id);
+                  saveData.contragentId = savedContragent.id;
+                } else if (contragentId) {
+                  saveData.contragentId = contragentId;
+                }
+                
+                console.log('✅ [CONTRAGENT] Данные контрагента сохранены в API');
+              } catch (error) {
+                // Если ошибка связана с отсутствием ИИН - это не критично, продолжаем работу
+                if (error.message && error.message.includes('contragentIdentifier')) {
+                  console.warn('⚠️ [CONTRAGENT] Не удалось сохранить в API (отсутствует ИИН):', error.message);
+                } else if (error.message && error.message.includes('уже существует контрагент с ролью')) {
+                  // Контрагент уже существует - это нормально, данные сохранены локально
+                  console.warn('⚠️ [CONTRAGENT] Контрагент с ролью client уже существует в заявке. Данные сохранены локально.');
+                } else {
+                  console.error('Ошибка сохранения контрагента в API:', error);
+                  // Продолжаем работу, данные сохранены локально
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Ошибка сохранения контрагента в API:', error);
+          // Продолжаем работу, данные сохранены локально
+        }
+      }
+      
+      // НЕ сохраняем в global storage - используем только локальное состояние
       // Обновляем метаданные заявки с ИИН страхователя
       if (applicationId && policyholderData.iin) {
         const existingMetadata = loadApplicationMetadata(applicationId) || {};
@@ -497,13 +1090,98 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
       const saveData = {
         ...policyholderData,
         toggleStates,
-        autoModeState
+        autoModeState,
+        contragentId, // Сохраняем ID контрагента
+        contragentRelationId // Сохраняем ID связи контрагента с заявкой
       };
       console.log('💾 [СТРАХОВАТЕЛЬ] Сохранение по кнопке (авторежим):', saveData);
-      // Сохраняем в глобальное хранилище
-      updateGlobalApplicationSection('Policyholder', saveData, applicationId);
-      // Также сохраняем в старое хранилище для обратной совместимости
-      savePolicyholderData(saveData, applicationId);
+      
+      // Сохраняем в API через Contragent PUT
+      if (applicationId) {
+        try {
+          const token = getAccessToken();
+          if (token) {
+            // API требует именно taskId, а не applicationId (processInstanceId)
+            // Если taskId отсутствует или равен applicationId, пытаемся получить его из метаданных или processInstance
+            let actualTaskId = taskId;
+            if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
+              // Пытаемся получить taskId из метаданных
+              const metadata = loadApplicationMetadata(applicationId);
+              if (metadata?.taskId && metadata.taskId !== applicationId) {
+                actualTaskId = metadata.taskId;
+                console.log('🔍 [CONTRAGENT] taskId получен из метаданных:', actualTaskId);
+              } else {
+                // Пытаемся получить taskId из processInstance (если он уже загружен)
+                try {
+                  const processInstance = await getProcessInstanceDetails(applicationId, token);
+                  // Проверяем, есть ли в processInstance поле taskId или tasks массив
+                  if (processInstance?.taskId && processInstance.taskId !== applicationId) {
+                    actualTaskId = processInstance.taskId;
+                    console.log('🔍 [CONTRAGENT] taskId получен из processInstance:', actualTaskId);
+                  } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
+                    // Берем первый taskId из массива tasks
+                    const firstTask = processInstance.tasks[0];
+                    if (firstTask?.id && firstTask.id !== applicationId) {
+                      actualTaskId = firstTask.id;
+                      console.log('🔍 [CONTRAGENT] taskId получен из processInstance.tasks:', actualTaskId);
+                    }
+                  }
+                } catch (error) {
+                  console.warn('⚠️ [CONTRAGENT] Не удалось получить processInstance для поиска taskId:', error.message);
+                }
+              }
+            }
+            
+            console.log('🔍 [CONTRAGENT] taskId:', actualTaskId, 'applicationId:', applicationId, 'taskId из props:', taskId);
+            
+            // Определяем accessId для API: если taskId найден и не равен applicationId, используем его, иначе используем applicationId
+            // Согласно Postman примеру, accessId может быть как taskId, так и applicationId (processInstanceId)
+            let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
+            
+            if (!accessIdForAPI || accessIdForAPI.trim() === '') {
+              console.warn('⚠️ [CONTRAGENT] accessId не найден, пропускаем сохранение контрагента в API. Данные сохранены локально.');
+            } else {
+              try {
+                // Преобразуем данные в формат API
+                const contragentData = mapPolicyholderToContragent(policyholderData, contragentId, contragentRelationId, loadedContragentIdentifier);
+                
+                // Логируем данные перед отправкой для диагностики
+                console.log('📤 [CONTRAGENT] Отправка данных контрагента в API с accessId:', accessIdForAPI);
+                console.log('📤 [CONTRAGENT] Данные контрагента:', JSON.stringify(contragentData, null, 2));
+                
+                // Вызываем PUT для сохранения/обновления контрагента (используем accessIdForAPI как accessId в URL)
+                const savedContragent = await updateContragent(contragentData, accessIdForAPI.trim(), token);
+                
+                // Сохраняем ID контрагента из ответа
+                if (savedContragent?.id) {
+                  setContragentId(savedContragent.id);
+                  saveData.contragentId = savedContragent.id;
+                } else if (contragentId) {
+                  saveData.contragentId = contragentId;
+                }
+                
+                console.log('✅ [CONTRAGENT] Данные контрагента сохранены в API');
+              } catch (error) {
+                // Если ошибка связана с отсутствием ИИН - это не критично, продолжаем работу
+                if (error.message && error.message.includes('contragentIdentifier')) {
+                  console.warn('⚠️ [CONTRAGENT] Не удалось сохранить в API (отсутствует ИИН):', error.message);
+                } else if (error.message && error.message.includes('уже существует контрагент с ролью')) {
+                  // Контрагент уже существует - это нормально, данные сохранены локально
+                  console.warn('⚠️ [CONTRAGENT] Контрагент с ролью client уже существует в заявке. Данные сохранены локально.');
+                } else {
+                  console.error('Ошибка сохранения контрагента в API:', error);
+                  // Продолжаем работу, данные сохранены локально
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Ошибка сохранения контрагента в API:', error);
+          // Продолжаем работу, данные сохранены локально
+        }
+      }
+      
+      // НЕ сохраняем в global storage - используем только локальное состояние
       // Обновляем метаданные заявки с ИИН страхователя
       if (applicationId && policyholderData.iin) {
         const existingMetadata = loadApplicationMetadata(applicationId) || {};
@@ -534,10 +1212,16 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
   // Функция для рендеринга кнопок справочника
   const renderDictionaryButton = (fieldName, label, onClickHandler, hasValue) => {
     const newFieldName = getDictionaryFieldName(fieldName);
+    const fieldValue = policyholderData[newFieldName];
     // Для типа клиента используем специальную функцию для отображения
+    // Для countryId и других справочников получаем название из объекта
     const displayValue = fieldName === 'clientType' 
-      ? getClientTypeDisplayValue(policyholderData[newFieldName])
-      : policyholderData[newFieldName];
+      ? getClientTypeDisplayValue(fieldValue)
+      : (fieldName === 'country' || newFieldName === 'countryId')
+        ? getNameFromDictionaryValue(fieldValue)
+        : (typeof fieldValue === 'object' && fieldValue !== null)
+          ? getNameFromDictionaryValue(fieldValue)
+          : fieldValue;
     if (hasValue) {
       return (
         <div data-layer={`Input '${label}'`} data-state="pressed" className="Input" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex'}}>
@@ -699,7 +1383,11 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
   }
 
   if (currentView === 'country') {
-    return <Country onBack={handleBackToMain} onSave={(value) => handleDictionaryValueSelect('country', value)} />;
+    return <Country 
+      onBack={handleBackToMain} 
+      onSave={(value) => handleDictionaryValueSelect('country', value)}
+      initialValue={policyholderData.countryId}
+    />;
   }
 
   if (currentView === 'region') {
@@ -719,6 +1407,17 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
     return <ClientType onBack={handleBackToMain} onSave={(value) => handleDictionaryValueSelect('clientType', value)} />;
   }
 
+  // Показываем индикатор загрузки, если данные загружаются
+  if (isLoadingContragent) {
+    return (
+      <div data-layer="Policyholder data page" className="PolicyholderDataPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex', minHeight: '100vh'}}>
+        <div style={{textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500'}}>
+          Загрузка данных страхователя...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div data-layer="Policyholder data page" className="PolicyholderDataPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
   <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
@@ -735,22 +1434,6 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
       <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
         <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Страхователь</div>
         <div data-layer="Button container" className="ButtonContainer" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-          <div data-layer="Application section transition buttons" className="ApplicationSectionTransitionButtons" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-            <div data-layer="Next Button" className="NextButton" onClick={onNext} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-              <div data-svg-wrapper data-layer="Chewron down" className="ChewronDown" style={{left: 31, top: 32, position: 'absolute'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M18.5 7.5L11 15.5L3.5 7.5" stroke="black" strokeWidth="2"/>
-                </svg>
-              </div>
-            </div>
-            <div data-layer="Previous Button" className="PreviousButton" onClick={onPrevious} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-              <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
-                </svg>
-              </div>
-            </div>
-          </div>
           <div data-layer="Save button" data-state="pressed" className="SaveButton" onClick={isLoading ? undefined : handleHeaderButtonClick} style={{width: 390, height: 85, background: isLoading ? '#666' : 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1}}>
             <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{getHeaderButtonText()}</div>
           </div>
@@ -818,7 +1501,7 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
           {renderCalendarField('birthDate', 'Дата рождения')}
           {renderDictionaryButton('gender', 'Пол', handleOpenGender, !!policyholderData.gender)}
           {renderDictionaryButton('sectorCode', 'Код сектора экономики', handleOpenSectorCode, !!policyholderData.economSecId)}
-          {renderDictionaryButton('country', 'Страна', handleOpenCountry, !!policyholderData.countryId)}
+          {renderDictionaryButton('country', 'Страна', handleOpenCountry, !!(policyholderData.countryId && (typeof policyholderData.countryId === 'object' ? policyholderData.countryId.code || policyholderData.countryId.nameRu : policyholderData.countryId)))}
           {renderDictionaryButton('region', 'Область', handleOpenRegion, !!policyholderData.district_nameru)}
           {renderInputField('settlementName', 'Название населенного пункта')}
           {renderInputField('street', 'Улица')}
@@ -858,7 +1541,7 @@ const Policyholder = ({ onBack, onSave, onNext, onPrevious, applicationId }) => 
               {renderCalendarField('birthDate', 'Дата рождения')}
               {renderDictionaryButton('gender', 'Пол', handleOpenGender, !!policyholderData.gender)}
               {renderDictionaryButton('sectorCode', 'Код сектора экономики', handleOpenSectorCode, !!policyholderData.economSecId)}
-              {renderDictionaryButton('country', 'Страна', handleOpenCountry, !!policyholderData.countryId)}
+              {renderDictionaryButton('country', 'Страна', handleOpenCountry, !!(policyholderData.countryId && (typeof policyholderData.countryId === 'object' ? policyholderData.countryId.code || policyholderData.countryId.nameRu : policyholderData.countryId)))}
               {renderDictionaryButton('region', 'Область', handleOpenRegion, !!policyholderData.district_nameru)}
               {renderInputField('settlementName', 'Название населенного пункта')}
               {renderInputField('street', 'Улица')}

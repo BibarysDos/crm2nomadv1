@@ -4,7 +4,7 @@ import OwnChild from './Own-child';
 import PolicyholderInsured from './PolicyholderInsured';
 import OtherPerson from './Other-person';
 
-const Insured = ({ onBack, onNext, onPrevious, policyholderData, onSave, applicationId, savedInsuredData }) => {
+const Insured = ({ onBack, policyholderData, onSave, applicationId, savedInsuredData }) => {
   const [selectedInsuredType, setSelectedInsuredType] = useState('');
   const [currentView, setCurrentView] = useState('main');
 
@@ -60,16 +60,16 @@ const Insured = ({ onBack, onNext, onPrevious, policyholderData, onSave, applica
 
   // Роутинг на компоненты типов
   if (currentView === 'other-child') {
-    return <OtherChild onBack={onBack} onNext={onNext} onPrevious={onPrevious} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} />;
+    return <OtherChild onBack={onBack} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} />;
   }
   if (currentView === 'own-child') {
-    return <OwnChild onBack={onBack} onNext={onNext} onPrevious={onPrevious} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
+    return <OwnChild onBack={onBack} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
   }
   if (currentView === 'policyholder') {
-    return <PolicyholderInsured onBack={onBack} onNext={onNext} onPrevious={onPrevious} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
+    return <PolicyholderInsured onBack={onBack} onSave={onSave} applicationId={applicationId} policyholderData={policyholderData} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
   }
   if (currentView === 'other-person') {
-    return <OtherPerson onBack={onBack} onNext={onNext} onPrevious={onPrevious} onSave={onSave} applicationId={applicationId} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
+    return <OtherPerson onBack={onBack} onSave={onSave} applicationId={applicationId} savedData={savedInsuredData} onOpenTypes={handleBackToMain} />;
   }
 
   // Основной вид - выбор типа

@@ -616,6 +616,9 @@ export const saveGlobalApplicationData = (globalData, applicationId = null) => {
       ...globalData
     };
     
+    // НЕ удаляем Policyholder здесь - это делается только в updateGlobalApplicationSection
+    // чтобы не влиять на другие данные при сохранении
+    
     localStorage.setItem(key, JSON.stringify(updatedData));
     console.log('💾 [GLOBAL APPLICATION DATA] Сохранено:', JSON.parse(JSON.stringify(updatedData)));
   } catch (error) {
@@ -631,6 +634,12 @@ export const saveGlobalApplicationData = (globalData, applicationId = null) => {
  */
 export const updateGlobalApplicationSection = (section, sectionData, applicationId = null) => {
   try {
+    // НЕ сохраняем Policyholder в global storage - полностью отказываемся от него
+    if (section === 'Policyholder') {
+      console.log('⚠️ [GLOBAL STORAGE] Попытка сохранить Policyholder в global storage - игнорируем (полностью отказались от global storage для Policyholder)');
+      return;
+    }
+    
     const globalData = loadGlobalApplicationData(applicationId || getCurrentApplicationId()) || {};
     globalData[section] = sectionData;
     saveGlobalApplicationData(globalData, applicationId || getCurrentApplicationId());

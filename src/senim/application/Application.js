@@ -7,7 +7,7 @@ import Questionary from './Questionary';
 import History from './History';
 import RejectReason from './RejectReason';
 import { loadApplicationHistory, loadApplicationBeneficiary, loadApplicationMetadata, saveApplicationMetadata, loadGlobalApplicationData, loadPolicyholderData, loadInsuredData, updateGlobalApplicationSection, getAccessToken, saveApplicationDataByNumber, loadApplicationDataByNumber, getApplicationKey, getUserRole, saveApplicationHistory } from '../../services/storageService';
-import { claimTask, sendTaskDecision, getRejectReasons, getProcessInstanceDetails, getProcessHistory } from '../../services/processService';
+import { claimTask, sendTaskDecision, getRejectReasons, getProcessInstanceDetails, getProcessHistory, getContragent } from '../../services/processService';
 
 const sanitizeHistoryValue = (value) => {
   if (value === null || value === undefined) {
@@ -84,6 +84,7 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   const [processError, setProcessError] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const processStateRequestedRef = useRef(false);
+  const [isLoadingApplicationData, setIsLoadingApplicationData] = useState(true);
   const formatDateTime = (value) => {
     if (!value) {
       return '';
@@ -107,6 +108,10 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     if (applicationId) {
       // Загружаем данные из API и localStorage параллельно для оптимизации
       const loadData = async () => {
+        // Устанавливаем состояние загрузки, если еще не установлено
+        if (!isLoadingApplicationData) {
+          setIsLoadingApplicationData(true);
+        }
         // Загружаем метаданные синхронно (быстро)
         const existingMetadata = loadApplicationMetadata(applicationId);
         if (!existingMetadata) {
@@ -124,10 +129,10 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
             // ПРИОРИТЕТ: Загружаем данные по номеру заявки (номер постоянный, ID могут меняться)
             const dataByNumber = loadApplicationDataByNumber(existingMetadata.number);
             if (dataByNumber) {
-              // Если данные найдены по номеру, используем их (независимо от applicationId)
-              if (dataByNumber.policyholder) {
-                updateGlobalApplicationSection('Policyholder', dataByNumber.policyholder, applicationId);
-              }
+              // НЕ загружаем Policyholder из global storage - используем только локальное состояние
+              // if (dataByNumber.policyholder) {
+              //   updateGlobalApplicationSection('Policyholder', dataByNumber.policyholder, applicationId);
+              // }
               if (dataByNumber.insured) {
                 updateGlobalApplicationSection('Insured', dataByNumber.insured, applicationId);
               }
@@ -248,26 +253,285 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
 
   useEffect(() => {
     if (!applicationId) {
+      setIsLoadingApplicationData(false);
       return;
     }
 
     let isCancelled = false;
+    setIsLoadingApplicationData(true);
 
     const fetchProcessData = async () => {
       const token = getAccessToken();
       if (!token) {
         console.warn('Токен недоступен, пропускаем загрузку данных процесса');
+        setIsLoadingApplicationData(false);
         return;
       }
 
       try {
-        const details = await getProcessInstanceDetails(applicationId, token);
-        if (!isCancelled && details) {
+        // Загружаем ProcessInstance и историю параллельно
+        const [details, historyResponse] = await Promise.all([
+          getProcessInstanceDetails(applicationId, token),
+          getProcessHistory(applicationId, token).catch(err => {
+            console.error('Ошибка получения истории процесса:', err);
+            return [];
+          })
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (details) {
           setProcessDetails(details);
           updateGlobalApplicationSection('ProcessDetails', details, applicationId);
 
           if (details.regNumber) {
             setApplicationNumber(details.regNumber);
+          }
+
+          // Извлекаем данные контрагента (страхователя) из ProcessInstance
+          if (details.contragents && Array.isArray(details.contragents)) {
+            const clientContragent = details.contragents.find(
+              c => c.contragentRoleCode === 'client'
+            );
+            
+            if (clientContragent) {
+              console.log('✅ [APPLICATION] Найден контрагент с ролью client в ProcessInstance:', clientContragent);
+              
+              // Проверяем, есть ли полные данные контрагента в ProcessInstance
+              const hasFullData = clientContragent.address || clientContragent.detail || clientContragent.identityDoc;
+              
+              if (hasFullData) {
+                // Если в ProcessInstance есть полные данные, используем их
+                console.log('📥 [APPLICATION] Используем полные данные контрагента из ProcessInstance');
+                const mapContragentToPolicyholderForApplication = (contragentData) => {
+                  if (!contragentData) return {};
+                  
+                  const address = contragentData.address || {};
+                  const detail = contragentData.detail || {};
+                  const identityDoc = contragentData.identityDoc || {};
+                  const mobileContact = contragentData.contacts?.find(c => c.contactTypeCode === 'mobile');
+                  
+                  // Функция для преобразования даты из YYYY-MM-DD в DD.MM.YYYY
+                  const formatDateForDisplay = (dateValue) => {
+                    if (!dateValue || dateValue === '' || dateValue === null || dateValue === undefined) {
+                      return '';
+                    }
+                    const trimmed = String(dateValue).trim();
+                    const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                    if (ymdMatch) {
+                      const [, year, month, day] = ymdMatch;
+                      return `${day}.${month}.${year}`;
+                    }
+                    if (/^\d{2}\.\d{2}\.\d{4}$/.test(trimmed)) {
+                      return trimmed;
+                    }
+                    try {
+                      const date = new Date(dateValue);
+                      if (isNaN(date.getTime())) return '';
+                      const day = String(date.getDate()).padStart(2, '0');
+                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                      const year = date.getFullYear();
+                      return `${day}.${month}.${year}`;
+                    } catch (e) {
+                      return '';
+                    }
+                  };
+                  
+                  const countryValue = address.countryCode ? {
+                    code: address.countryCode,
+                    nameRu: address.countryName || address.countryCode
+                  } : null;
+                  
+                  const economicSectorName = detail.economicSectorName || '';
+                  const economicSectorCode = detail.economicSectorCode || '';
+                  const economicSectorDisplayName = economicSectorCode && economicSectorName 
+                    ? `${economicSectorCode} - ${economicSectorName}`
+                    : economicSectorName || economicSectorCode || '';
+                  
+                  return {
+                    iin: contragentData.identifier || contragentData.contragentIdentifier || '',
+                    telephone: mobileContact?.value || '',
+                    name: detail.firstName || '',
+                    surname: detail.lastName || '',
+                    patronymic: detail.middleName || '',
+                    street: address.street || '',
+                    houseNumber: address.building || '',
+                    apartmentNumber: address.flat || '',
+                    docNumber: identityDoc.number || '',
+                    birthDate: formatDateForDisplay(detail.birthDate || ''),
+                    issueDate: formatDateForDisplay(identityDoc.issuedDate || ''),
+                    expiryDate: formatDateForDisplay(identityDoc.expireDate || ''),
+                    gender: detail.genderCode ? {
+                      code: detail.genderCode,
+                      nameRu: detail.genderName || detail.genderCode
+                    } : '',
+                    economSecId: detail.economicSectorCode ? {
+                      code: detail.economicSectorCode,
+                      nameRu: economicSectorDisplayName
+                    } : '',
+                    countryId: countryValue,
+                    district_nameru: address.region || address.district || '',
+                    settlementName: address.city || '',
+                    vidDocId: identityDoc.identityDocTypeCode ? {
+                      code: identityDoc.identityDocTypeCode,
+                      nameRu: identityDoc.identityDocTypeName || identityDoc.identityDocTypeCode
+                    } : '',
+                    issuedBy: identityDoc.identityDocIssuerCode ? {
+                      code: identityDoc.identityDocIssuerCode,
+                      nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
+                    } : '',
+                    clientType: contragentData.clientType || contragentData.insuredType || ''
+                  };
+                };
+                
+                const mappedData = mapContragentToPolicyholderForApplication(clientContragent);
+                setPolicyholderData(mappedData);
+                console.log('✅ [APPLICATION] Полные данные страхователя установлены из ProcessInstance:', mappedData);
+              } else {
+                // Если полных данных нет, загружаем их через getContragent
+                console.log('📥 [APPLICATION] Загружаем полные данные контрагента через getContragent...');
+                try {
+                  const contragentId = clientContragent.id;
+                    const fullContragentData = await getContragent(contragentId, applicationId, token);
+                    
+                    if (fullContragentData) {
+                      console.log('📥 [APPLICATION] Получены полные данные контрагента:', fullContragentData);
+                      
+                      // Используем ту же функцию маппинга
+                      const mapContragentToPolicyholderForApplication = (contragentData) => {
+                      if (!contragentData) return {};
+                      
+                      const address = contragentData.address || {};
+                      const detail = contragentData.detail || {};
+                      const identityDoc = contragentData.identityDoc || {};
+                      const mobileContact = contragentData.contacts?.find(c => c.contactTypeCode === 'mobile');
+                      
+                      // Функция для преобразования даты из YYYY-MM-DD в DD.MM.YYYY
+                      const formatDateForDisplay = (dateValue) => {
+                        if (!dateValue || dateValue === '' || dateValue === null || dateValue === undefined) {
+                          return '';
+                        }
+                        const trimmed = String(dateValue).trim();
+                        const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                        if (ymdMatch) {
+                          const [, year, month, day] = ymdMatch;
+                          return `${day}.${month}.${year}`;
+                        }
+                        if (/^\d{2}\.\d{2}\.\d{4}$/.test(trimmed)) {
+                          return trimmed;
+                        }
+                        try {
+                          const date = new Date(dateValue);
+                          if (isNaN(date.getTime())) return '';
+                          const day = String(date.getDate()).padStart(2, '0');
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const year = date.getFullYear();
+                          return `${day}.${month}.${year}`;
+                        } catch (e) {
+                          return '';
+                        }
+                      };
+                      
+                      const countryValue = address.countryCode ? {
+                        code: address.countryCode,
+                        nameRu: address.countryName || address.countryCode
+                      } : null;
+                      
+                      const economicSectorName = detail.economicSectorName || '';
+                      const economicSectorCode = detail.economicSectorCode || '';
+                      const economicSectorDisplayName = economicSectorCode && economicSectorName 
+                        ? `${economicSectorCode} - ${economicSectorName}`
+                        : economicSectorName || economicSectorCode || '';
+                      
+                      return {
+                        iin: contragentData.identifier || contragentData.contragentIdentifier || '',
+                        telephone: mobileContact?.value || '',
+                        name: detail.firstName || '',
+                        surname: detail.lastName || '',
+                        patronymic: detail.middleName || '',
+                        street: address.street || '',
+                        houseNumber: address.building || '',
+                        apartmentNumber: address.flat || '',
+                        docNumber: identityDoc.number || '',
+                        birthDate: formatDateForDisplay(detail.birthDate || ''),
+                        issueDate: formatDateForDisplay(identityDoc.issuedDate || ''),
+                        expiryDate: formatDateForDisplay(identityDoc.expireDate || ''),
+                        gender: detail.genderCode ? {
+                          code: detail.genderCode,
+                          nameRu: detail.genderName || detail.genderCode
+                        } : '',
+                        economSecId: detail.economicSectorCode ? {
+                          code: detail.economicSectorCode,
+                          nameRu: economicSectorDisplayName
+                        } : '',
+                        countryId: countryValue,
+                        district_nameru: address.region || address.district || '',
+                        settlementName: address.city || '',
+                        vidDocId: identityDoc.identityDocTypeCode ? {
+                          code: identityDoc.identityDocTypeCode,
+                          nameRu: identityDoc.identityDocTypeName || identityDoc.identityDocTypeCode
+                        } : '',
+                        issuedBy: identityDoc.identityDocIssuerCode ? {
+                          code: identityDoc.identityDocIssuerCode,
+                          nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
+                        } : '',
+                        clientType: contragentData.clientType || contragentData.insuredType || ''
+                      };
+                    };
+                    
+                    const mappedData = mapContragentToPolicyholderForApplication(fullContragentData);
+                    setPolicyholderData(mappedData);
+                    console.log('✅ [APPLICATION] Полные данные страхователя загружены через getContragent:', mappedData);
+                  }
+                } catch (error) {
+                  console.error('❌ [APPLICATION] Ошибка загрузки полных данных контрагента:', error);
+                  // Если не удалось загрузить полные данные, используем базовые из ProcessInstance
+                  const contragentIdentifier = clientContragent.identifier || '';
+                  const contragentLongName = clientContragent.longName || '';
+                  
+                  let surname = '';
+                  let name = '';
+                  let patronymic = '';
+                  
+                  if (contragentLongName) {
+                    const nameParts = contragentLongName.trim().split(/\s+/);
+                    if (nameParts.length >= 1) surname = nameParts[0] || '';
+                    if (nameParts.length >= 2) name = nameParts[1] || '';
+                    if (nameParts.length >= 3) patronymic = nameParts.slice(2).join(' ') || '';
+                  }
+                  
+                  const basicData = {
+                    iin: contragentIdentifier,
+                    surname: surname,
+                    name: name,
+                    patronymic: patronymic,
+                    telephone: '',
+                    street: '',
+                    houseNumber: '',
+                    apartmentNumber: '',
+                    docNumber: '',
+                    birthDate: '',
+                    issueDate: '',
+                    expiryDate: '',
+                    gender: '',
+                    economSecId: '',
+                    countryId: '',
+                    district_nameru: '',
+                    settlementName: '',
+                    vidDocId: '',
+                    issuedBy: '',
+                    clientType: ''
+                  };
+                  
+                  if (contragentIdentifier || surname || name) {
+                    setPolicyholderData(basicData);
+                    console.log('✅ [APPLICATION] Базовые данные страхователя установлены из ProcessInstance:', basicData);
+                  }
+                }
+              }
+            }
           }
 
           const currentMetadata = loadApplicationMetadata(applicationId) || {};
@@ -307,24 +571,25 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
             saveApplicationMetadata(applicationId, updatedMetadata);
           }
         }
-      } catch (error) {
-        console.error('Ошибка получения данных процесса:', error);
-      }
 
-      try {
-        const historyResponse = await getProcessHistory(applicationId, token);
-        if (isCancelled) {
-          return;
-        }
-
+        // Обрабатываем историю
         if (Array.isArray(historyResponse)) {
           const mappedHistory = historyResponse.map((item) => mapHistoryItem(item));
           const historyPayload = normalizeHistoryData({ items: mappedHistory });
           setHistoryData(historyPayload);
           saveApplicationHistory(historyPayload, applicationId);
+        } else {
+          // Если истории нет, устанавливаем пустую историю
+          setHistoryData(normalizeHistoryData());
         }
       } catch (error) {
-        console.error('Ошибка получения истории процесса:', error);
+        console.error('Ошибка получения данных процесса:', error);
+      } finally {
+        // Завершаем загрузку после получения всех данных
+        if (!isCancelled) {
+          setIsLoadingApplicationData(false);
+          console.log('✅ [APPLICATION] Все данные загружены, открываем заявку');
+        }
       }
     };
 
@@ -360,7 +625,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     
     return {
       metadata: metadata || {},
-      policyholder: globalData?.Policyholder || policyholderData || null,
+      // НЕ сохраняем Policyholder - используем только локальное состояние
+      // policyholder: globalData?.Policyholder || policyholderData || null,
       insured: globalData?.Insured || insuredData || null,
       beneficiary: beneficiaryData || null,
       history: historyData || null,
@@ -370,7 +636,7 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
       processState: processState || null,
       applicationId: applicationId // Сохраняем applicationId для связи
     };
-  }, [applicationId, policyholderData, insuredData, beneficiaryData, historyData, termsData, questionaryData, processState, processDetails]);
+  }, [applicationId, insuredData, beneficiaryData, historyData, termsData, questionaryData, processState, processDetails]);
   
   // Функция для сохранения данных по номеру заявки
   const saveDataByNumber = useCallback(() => {
@@ -446,23 +712,6 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   const handleViewFullHistory = () => setCurrentView('history');
 
   // Порядок разделов для навигации
-  const sections = ['history', 'policyholder', 'insured', 'beneficiary', 'terms', 'questionary'];
-  
-  // Навигация к следующему разделу
-  const handleNextSection = (currentSection) => {
-    const currentIndex = sections.indexOf(currentSection);
-    if (currentIndex < sections.length - 1) {
-      setCurrentView(sections[currentIndex + 1]);
-    }
-  };
-  
-  // Навигация к предыдущему разделу
-  const handlePreviousSection = (currentSection) => {
-    const currentIndex = sections.indexOf(currentSection);
-    if (currentIndex > 0) {
-      setCurrentView(sections[currentIndex - 1]);
-    }
-  };
 
   // Функция для сохранения данных заявки в API
   const saveApplicationToAPI = async (section, data) => {
@@ -497,6 +746,9 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
 
       if (response.ok) {
         console.log('Данные заявки успешно сохранены в API');
+      } else if (response.status === 404) {
+        // Заявление еще не существует в API - это нормально, данные сохранены локально
+        console.warn('Заявление не найдено в API (404). Данные сохранены локально.');
       } else {
         console.error('Ошибка сохранения данных заявки в API:', response.status);
       }
@@ -512,8 +764,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     // Сохраняем в глобальное хранилище
     if (applicationId) {
       updateGlobalApplicationSection('Insured', data, applicationId);
-      // Сохраняем в API
-      saveApplicationToAPI('Insured', data);
+      // НЕ сохраняем в API для Insured - только в глобальное хранилище
+      // saveApplicationToAPI('Insured', data); // Убрано - Insured сохраняется только в глобальное хранилище
       
       // Сохраняем все данные по номеру заявки
       saveDataByNumber();
@@ -521,26 +773,55 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   };
 
   const handlePolicyholderSave = (data) => {
-    setPolicyholderData(data);
-    // Сохраняем в глобальное хранилище
+    // data может содержать либо полные данные (mappedData из Policyholder.js),
+    // либо displayData с базовыми полями (firstName, lastName, middleName, iin)
+    // Преобразуем displayData в формат policyholderData, если нужно
+    let policyholderDataToSet = data;
+    
+    // Если данные приходят в формате displayData (с firstName, lastName, middleName),
+    // преобразуем их в формат policyholderData (с name, surname, patronymic)
+    if (data.firstName !== undefined || data.lastName !== undefined || data.middleName !== undefined) {
+      // Это displayData - преобразуем в policyholderData
+      policyholderDataToSet = {
+        ...data,
+        name: data.firstName || data.name || '',
+        surname: data.lastName || data.surname || '',
+        patronymic: data.middleName || data.patronymic || '',
+        // Удаляем старые поля, если они есть
+        firstName: undefined,
+        lastName: undefined,
+        middleName: undefined
+      };
+      // Удаляем undefined поля
+      Object.keys(policyholderDataToSet).forEach(key => {
+        if (policyholderDataToSet[key] === undefined) {
+          delete policyholderDataToSet[key];
+        }
+      });
+    }
+    
+    // Устанавливаем все данные (включая все поля из mappedData)
+    setPolicyholderData(policyholderDataToSet);
+    console.log('✅ [APPLICATION] policyholderData обновлен:', policyholderDataToSet);
+    
+    // НЕ сохраняем в глобальное хранилище для Policyholder - используем только локальное состояние
     if (applicationId) {
-      updateGlobalApplicationSection('Policyholder', data, applicationId);
-      
       // Обновляем метаданные заявки с ИИН страхователя
       const existingMetadata = loadApplicationMetadata(applicationId) || {};
-      if (data.iin && existingMetadata.policyholderIin !== data.iin) {
+      const iin = policyholderDataToSet.iin || data.iin;
+      if (iin && existingMetadata.policyholderIin !== iin) {
         saveApplicationMetadata(applicationId, {
           ...existingMetadata,
-          policyholderIin: data.iin
+          policyholderIin: iin
         });
-        console.log('ИИН страхователя сохранен в метаданные:', data.iin);
+        console.log('ИИН страхователя сохранен в метаданные:', iin);
       }
       
-      // Сохраняем в API
-      saveApplicationToAPI('Policyholder', data);
+      // НЕ вызываем saveApplicationToAPI для Policyholder - сохранение Contragent происходит в Policyholder.js через updateContragent
+      // saveApplicationToAPI('Policyholder', data); // Убрано - Policyholder сохраняется через Contragent API в Policyholder.js
       
-      // Сохраняем все данные по номеру заявки
-      saveDataByNumber();
+      // НЕ сохраняем Policyholder по номеру заявки - используем только локальное состояние
+      // saveDataByNumber(); // Убрано для Policyholder
     }
   };
 
@@ -748,31 +1029,29 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     return (
       <History
         onBack={handleBackToMain}
-        onNext={() => handleNextSection('history')}
-        onPrevious={() => handlePreviousSection('history')}
         applicationId={applicationId}
       />
     );
   }
 
   if (currentView === 'policyholder') {
-    return <Policyholder onBack={handleBackToMain} onSave={handlePolicyholderSave} onNext={() => handleNextSection('policyholder')} onPrevious={() => handlePreviousSection('policyholder')} applicationId={applicationId} />;
+    return <Policyholder onBack={handleBackToMain} onSave={handlePolicyholderSave} applicationId={applicationId} taskId={processState?.taskId} />;
   }
 
   if (currentView === 'insured') {
-    return <Insured onBack={handleBackToMain} policyholderData={policyholderData} onSave={handleInsuredSave} onNext={() => handleNextSection('insured')} onPrevious={() => handlePreviousSection('insured')} applicationId={applicationId} savedInsuredData={insuredData} />;
+    return <Insured onBack={handleBackToMain} policyholderData={policyholderData} onSave={handleInsuredSave} applicationId={applicationId} savedInsuredData={insuredData} />;
   }
 
   if (currentView === 'beneficiary') {
-    return <Beneficiary onBack={handleBackToMain} onNext={() => handleNextSection('beneficiary')} onPrevious={() => handlePreviousSection('beneficiary')} applicationId={applicationId} />;
+    return <Beneficiary onBack={handleBackToMain} applicationId={applicationId} />;
   }
 
   if (currentView === 'terms') {
-    return <Terms onBack={handleBackToMain} onSave={handleTermsSave} onNext={() => handleNextSection('terms')} onPrevious={() => handlePreviousSection('terms')} applicationId={applicationId} />;
+    return <Terms onBack={handleBackToMain} onSave={handleTermsSave} applicationId={applicationId} />;
   }
 
   if (currentView === 'questionary') {
-    return <Questionary onBack={handleBackToMain} onSave={handleQuestionarySave} onNext={() => handleNextSection('questionary')} onPrevious={() => handlePreviousSection('questionary')} applicationId={applicationId} />;
+    return <Questionary onBack={handleBackToMain} onSave={handleQuestionarySave} applicationId={applicationId} />;
   }
 
   if (currentView === 'reject') {
@@ -786,6 +1065,17 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
         isLoading={reasonsLoading}
         isRejectingTask={isRejectingTask}
       />
+    );
+  }
+
+  // Показываем индикатор загрузки, пока данные загружаются
+  if (isLoadingApplicationData) {
+    return (
+      <div style={{width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'white'}}>
+        <div style={{textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500'}}>
+          Загрузка данных заявки...
+        </div>
+      </div>
     );
   }
 
@@ -816,8 +1106,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
       <div data-layer="Frame 1321316873" className="Frame1321316873" style={{flex: '1 1 0', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
         <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 auto', height: 12, textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Заявление № {applicationNumber || (applicationId ? applicationId.substring(0, 8) : '')}</div>
       </div>
-      {/* Показываем кнопки только для задач (folderType === 'Task' или 'Tasks') */}
-      {(folderType === 'Task' || folderType === 'Tasks') && (
+      {/* Показываем кнопки если есть taskId в processState (независимо от folderType) */}
+      {currentTaskId && (
         <div data-layer="Button Container" className="ButtonContainer" style={{flex: '0 0 777px', height: 85, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', justifyContent: 'flex-end', alignItems: 'center', display: 'flex', gap: 16}}>
           {processError && (
             <div style={{color: '#d32f2f', fontSize: 14, fontFamily: 'Inter', fontWeight: 500, marginRight: 12}}>

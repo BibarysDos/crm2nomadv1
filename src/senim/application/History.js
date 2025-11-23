@@ -55,7 +55,7 @@ const mapHistoryRow = (item = {}) => ({
   comment: sanitizeValue(item.comment) || sanitizeValue(item.reason) || ''
 });
 
-const History = ({ onBack, onNext, onPrevious, applicationId }) => {
+const History = ({ onBack, applicationId }) => {
   const [historyItems, setHistoryItems] = useState([]);
 
   useEffect(() => {
@@ -72,53 +72,51 @@ const History = ({ onBack, onNext, onPrevious, applicationId }) => {
 
   const columns = ['Этап процесса', 'Исполнитель', 'Дата события', 'Решение', 'Комментарий'];
 
-  return (
-    <div className="HistoryApplicationPage" style={{width: 1512, height: 1436, background: 'white', overflow: 'hidden', display: 'inline-flex'}}>
-      <div className="Menu" style={{width: 85, borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid'}}>
-        <div className="BackButton" onClick={onBack} style={{width: 85, height: 85, cursor: 'pointer', borderBottom: '1px #F8E8E8 solid', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+  const renderMenu = () => (
+    <div data-layer="Menu" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+      <div data-layer="Back button" className="BackButton" onClick={onBack} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
+        <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 32, top: 32, position: 'absolute'}}>
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2" />
+            <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2"/>
           </svg>
         </div>
       </div>
-      <div className="HistoryApplication" style={{flex: 1, borderRight: '1px #F8E8E8 solid', display: 'flex', flexDirection: 'column'}}>
-        <div className="Subheader" style={{height: 85, borderBottom: '1px #F8E8E8 solid', display: 'flex', alignItems: 'center'}}>
-          <div style={{flex: 1, paddingLeft: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-            <div style={{fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>История</div>
-            <div style={{display: 'flex'}}>
-              <div onClick={onNext} style={{width: 85, height: 85, cursor: 'pointer', borderRight: '1px #F8E8E8 solid', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22">
-                  <path d="M18.5 7.5L11 15.5L3.5 7.5" stroke="black" strokeWidth="2" />
-                </svg>
-              </div>
-              <div onClick={onPrevious} style={{width: 85, height: 85, cursor: 'pointer', borderBottom: '1px #F8E8E8 solid', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22">
-                  <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div style={{display: 'flex', flexDirection: 'column', alignSelf: 'stretch'}}>
-          <div style={{height: 85, paddingLeft: 40, background: '#F6F6F6', borderBottom: '1px #F8E8E8 solid', display: 'flex', gap: 20}}>
+    </div>
+  );
+
+  const renderSubHeader = (title) => (
+    <div data-layer="SubHeader" className="Subheader" style={{alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex'}}>
+      <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
+        <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{title}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div data-layer="History page" className="HistoryPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+      {renderMenu()}
+      <div data-layer="History content" className="HistoryContent" style={{width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+        {renderSubHeader('История')}
+        <div data-layer="History table wrapper" className="HistoryTableWrapper" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
+          <div data-layer="History table head" className="HistoryTableHead" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#FCFCFC', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>
             {columns.map((title) => (
-              <div key={title} style={{width: 220, display: 'flex', alignItems: 'center', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>
+              <div key={title} data-layer="History cell head" className="HistoryCellHead" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>
                 {title}
               </div>
             ))}
           </div>
           {historyItems.length === 0 ? (
-            <div style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>
-              История пуста
+            <div data-layer="History empty" className="HistoryEmpty" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>
+              <div data-layer="Empty text" className="EmptyText" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>История пуста</div>
             </div>
           ) : (
             historyItems.map((item, index) => (
-              <div key={`${item.stage}-${index}`} style={{alignSelf: 'stretch', height: 85, paddingLeft: 40, borderBottom: '1px #F8E8E8 solid', display: 'flex', gap: 20}}>
-                <div style={{width: 220, display: 'flex', alignItems: 'center', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>{item.stage || '—'}</div>
-                <div style={{width: 220, display: 'flex', alignItems: 'center', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>{item.performer || '—'}</div>
-                <div style={{width: 220, display: 'flex', alignItems: 'center', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>{formatHistoryDate(item.eventDate)}</div>
-                <div style={{width: 220, display: 'flex', alignItems: 'center', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>{item.decision || '—'}</div>
-                <div style={{width: 220, display: 'flex', alignItems: 'center', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: 500}}>{item.comment || '—'}</div>
+              <div key={`${item.stage}-${index}`} data-layer="History row" className="HistoryRow" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.stage || '—'}</div>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.performer || '—'}</div>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{formatHistoryDate(item.eventDate)}</div>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.decision || '—'}</div>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.comment || '—'}</div>
               </div>
             ))
           )}

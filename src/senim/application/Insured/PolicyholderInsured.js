@@ -7,7 +7,7 @@ import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderToggleButton } from './InsuredFormFields';
 
-const PolicyholderInsured = ({ onBack, onNext, onPrevious, policyholderData, onSave, applicationId, savedData, onOpenTypes }) => {
+const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, savedData, onOpenTypes }) => {
   // Основной currentView для переключения между этапами
   // eslint-disable-next-line no-unused-vars
   const [currentView, setCurrentView] = useState('main');
@@ -22,6 +22,34 @@ const PolicyholderInsured = ({ onBack, onNext, onPrevious, policyholderData, onS
 
   // Активное поле
   const [activeField, setActiveField] = useState(null);
+
+  // Логирование policyholderData для отладки
+  useEffect(() => {
+    console.log('📋 [POLICYHOLDER INSURED] policyholderData получен:', policyholderData);
+    if (policyholderData) {
+      console.log('📋 [POLICYHOLDER INSURED] Поля:', {
+        iin: policyholderData.iin,
+        telephone: policyholderData.telephone,
+        surname: policyholderData.surname,
+        name: policyholderData.name,
+        patronymic: policyholderData.patronymic,
+        birthDate: policyholderData.birthDate,
+        gender: policyholderData.gender,
+        economSecId: policyholderData.economSecId,
+        countryId: policyholderData.countryId,
+        district_nameru: policyholderData.district_nameru,
+        settlementName: policyholderData.settlementName,
+        street: policyholderData.street,
+        houseNumber: policyholderData.houseNumber,
+        apartmentNumber: policyholderData.apartmentNumber,
+        vidDocId: policyholderData.vidDocId,
+        docNumber: policyholderData.docNumber,
+        issuedBy: policyholderData.issuedBy,
+        issueDate: policyholderData.issueDate,
+        expiryDate: policyholderData.expiryDate
+      });
+    }
+  }, [policyholderData]);
 
   // Восстановление сохраненных данных при монтировании
   useEffect(() => {
@@ -60,9 +88,13 @@ const PolicyholderInsured = ({ onBack, onNext, onPrevious, policyholderData, onS
   const getDictionaryDisplayValue = (value) => {
     if (!value) return '';
     if (typeof value === 'object') {
-      return value.name_ru || value.name || value.title || '';
+      // Проверяем различные варианты названий полей (nameRu - camelCase, name_ru - snake_case)
+      const displayValue = value.nameRu || value.name_ru || value.name || value.title || value.label || '';
+      console.log('🔍 [DICTIONARY DISPLAY] Значение справочника:', value, '→ Отображение:', displayValue);
+      return displayValue;
     }
-    return value;
+    // Если это строка, возвращаем как есть
+    return String(value);
   };
 
   // Обработчики справочников
@@ -176,22 +208,6 @@ const PolicyholderInsured = ({ onBack, onNext, onPrevious, policyholderData, onS
       <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
         <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{title}</div>
         <div data-layer="Button container" className="ButtonContainer" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-          <div data-layer="Application section transition buttons" className="ApplicationSectionTransitionButtons" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-            <div data-layer="Next Button" className="NextButton" onClick={onNext} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-              <div data-svg-wrapper data-layer="Chewron down" className="ChewronDown" style={{left: 31, top: 32, position: 'absolute'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M18.5 7.5L11 15.5L3.5 7.5" stroke="black" strokeWidth="2"/>
-                </svg>
-              </div>
-            </div>
-            <div data-layer="Previous Button" className="PreviousButton" onClick={onPrevious} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-              <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute'}}>
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
-                </svg>
-              </div>
-            </div>
-          </div>
           <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
             <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
           </div>
@@ -236,7 +252,7 @@ const PolicyholderInsured = ({ onBack, onNext, onPrevious, policyholderData, onS
               {renderDictionaryButton('gender', 'Пол', getDictionaryDisplayValue(policyholderData.gender), handleOpenGender, !!policyholderData.gender)}
               {renderDictionaryButton('economSecId', 'Код сектора экономики', getDictionaryDisplayValue(policyholderData.economSecId), handleOpenSectorCode, !!policyholderData.economSecId)}
               {renderDictionaryButton('countryId', 'Страна', getDictionaryDisplayValue(policyholderData.countryId), handleOpenCountry, !!policyholderData.countryId)}
-              {renderDictionaryButton('district_nameru', 'Область', getDictionaryDisplayValue(policyholderData.district_nameru), handleOpenRegion, !!policyholderData.district_nameru)}
+              {renderDictionaryButton('district_nameru', 'Область', policyholderData.district_nameru || '', handleOpenRegion, !!policyholderData.district_nameru)}
               {renderInputField('settlementName', 'Название населенного пункта', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
               {renderInputField('street', 'Улица', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
               {renderInputField('houseNumber', '№ дома', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}

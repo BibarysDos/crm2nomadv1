@@ -162,14 +162,17 @@ function App() {
 
         // can-claim-task вызываем ТОЛЬКО для папки "Задачи" (Task), не для "Заявления" (Statement)
         let canClaimInfo = null;
-        if (folderType === 'Task' || folderType === 'Tasks') {
+        // Для всех заявок проверяем canClaim, если есть taskId
+        if (taskId) {
           try {
             canClaimInfo = await getTaskClaimAvailability(taskId, token);
           } catch (error) {
             console.error('Не удалось получить canClaim при обновлении:', error);
+            // Если не удалось получить canClaim, считаем что canClaim = false (задача уже наша)
+            canClaimInfo = { canClaim: false };
           }
         } else {
-          // Для заявлений (Statement) не вызываем can-claim-task, считаем что canClaim = false (задача уже наша)
+          // Если нет taskId, считаем что canClaim = false
           canClaimInfo = { canClaim: false };
         }
         
@@ -374,6 +377,9 @@ function App() {
       saveApplicationMetadata(applicationId, metadataUpdate);
       const processState = extractProcessStateFromMetadata(metadataUpdate);
       setProcessState(processState);
+      
+      // Обновляем processState через refreshProcessState для консистентности
+      await refreshProcessState(applicationId);
       
       // Переходим к заявлению
       setCurrentView('application');
