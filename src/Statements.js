@@ -291,8 +291,15 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
             const statementTaskStatusName = statement.taskStatusName || statement.task_status_name || null;
             const statementTaskStatusCode = statement.taskStatusCode || statement.task_status_code || null;
             
+            // Загружаем метаданные по taskId и processInstanceId
+            const metadataTask = loadApplicationMetadata(statement.id) || {};
+            const metadataProcess = statement.processInstanceId
+              ? (loadApplicationMetadata(statement.processInstanceId) || {})
+              : {};
+            const combinedMetadata = { ...metadataTask, ...metadataProcess };
+            
             // Основной источник ИИН - данные из API
-            let policyholderIin = statement.insurerIIN || '';
+            let policyholderIin = statement.insurerIIN || combinedMetadata.policyholderIin || '';
             let insuranceAmount = null; // Страховая сумма из Terms данных
             const extractInsuranceAmount = (insuranceProductName) => {
               if (!insuranceProductName) return null;
@@ -308,17 +315,15 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
             
             // Пытаемся загрузить дополнительные данные из localStorage (опционально, только для дополнения)
             try {
-              const metadata = loadApplicationMetadata(statement.id);
-              
               // Если в метаданных есть ИИН, используем его (может быть более актуальным)
-              if (metadata?.policyholderIin) {
-                policyholderIin = metadata.policyholderIin;
+              if (combinedMetadata?.policyholderIin) {
+                policyholderIin = combinedMetadata.policyholderIin;
               }
               
             // Дополнительно: проверяем данные по номеру заявки (если есть)
             // Загружаем один раз для извлечения ИИН и страховой суммы
             let dataByNumber = null;
-            const applicationNumber = statement.number || metadata?.number;
+            const applicationNumber = statement.number || combinedMetadata?.number;
               if (applicationNumber) {
                 try {
                   dataByNumber = loadApplicationDataByNumber(applicationNumber);
@@ -343,23 +348,27 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
               
               // Обновляем метаданные свежими данными по задаче и статусу
               const folderType = selectedFolder?.code || 'Statement';
+              const finalStatusName = combinedMetadata?.statusName || statement.statusName || metadataTask?.statusName || 'Черновик';
+              const finalStatusCode = combinedMetadata?.statusCode || statement.statusCode || metadataTask?.statusCode || null;
+              const finalTaskStatusName = combinedMetadata?.taskStatusName || statementTaskStatusName || null;
+              const finalTaskStatusCode = combinedMetadata?.taskStatusCode || statementTaskStatusCode || null;
               const metadataToPersist = {
-                ...(metadata || {}),
+                ...metadataTask,
                 applicationId: statement.id,
-                product: metadata?.product || statement.processName || '',
-                processId: metadata?.processId || statement.processInstanceId || statement.id,
-                processName: statement.processName || metadata?.processName,
-                processCode: statement.processCode || metadata?.processCode,
-                status: statement.statusName || metadata?.status || 'Черновик',
-                statusName: statement.statusName || metadata?.statusName,
-                statusCode: statement.statusCode || metadata?.statusCode,
+                product: metadataTask?.product || statement.processName || '',
+                processId: metadataTask?.processId || statement.processInstanceId || statement.id,
+                processName: statement.processName || metadataTask?.processName,
+                processCode: statement.processCode || metadataTask?.processCode,
+                status: finalStatusName,
+                statusName: finalStatusName,
+                statusCode: finalStatusCode,
                 taskId: statementTaskId, // id = taskId!
-                taskStatusName: statementTaskStatusName || metadata?.taskStatusName,
-                taskStatusCode: statementTaskStatusCode || metadata?.taskStatusCode,
+                taskStatusName: finalTaskStatusName,
+                taskStatusCode: finalTaskStatusCode,
                 folderType: folderType, // Сохраняем тип папки
-                number: statement.number || metadata?.number || null, // Сохраняем номер заявки!
+                number: statement.number || metadataTask?.number || null, // Сохраняем номер заявки!
                 policyholderIin: policyholderIin, // Сохраняем найденный ИИН
-                operationTypeName: statement.operationTypeName || metadata?.operationTypeName || null // Сохраняем тип операции
+                operationTypeName: statement.operationTypeName || metadataTask?.operationTypeName || null // Сохраняем тип операции
               };
               saveApplicationMetadata(statement.id, metadataToPersist);
               
@@ -369,7 +378,9 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
                 const processMetadata = {
                   ...metadataToPersist,
                   applicationId: processId,
-                  processId: processId
+                  processId: processId,
+                  statusName: combinedMetadata?.statusName || metadataToPersist.statusName,
+                  statusCode: combinedMetadata?.statusCode || metadataToPersist.statusCode
                 };
                 saveApplicationMetadata(processId, processMetadata);
               }
@@ -394,6 +405,11 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
               }
             }
             
+            // Рассчитываем финальные статусы для отображения (приоритет: метаданные процесса -> метаданные задачи -> API)
+            const displayStatusName = combinedMetadata?.statusName || statement.statusName || 'Черновик';
+            const displayTaskStatusName = combinedMetadata?.taskStatusName || statementTaskStatusName || null;
+            const displayTaskStatusCode = combinedMetadata?.taskStatusCode || statementTaskStatusCode || null;
+            
             // ВСЕГДА возвращаем заявку из API, даже если не удалось загрузить дополнительные данные
             return {
               applicationId: statement.id,
@@ -401,15 +417,15 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
               policyholderIin: policyholderIin, // ИИН из API или из localStorage (если удалось загрузить)
               createdAt: statement.date,
               product: statement.processName || '',
-              status: statement.statusName || 'Черновик',
+              status: displayStatusName,
               processCode: statement.processCode,
               processName: statement.processName,
               operationTypeName: statement.operationTypeName || null, // Тип операции из API
               insuranceAmount: insuranceAmount, // Страховая сумма из Terms данных
               processInstanceId: statement.processInstanceId || statement.id, // Важно: processId для загрузки данных
               taskId: statementTaskId, // id = taskId!
-              taskStatusName: statementTaskStatusName,
-              taskStatusCode: statementTaskStatusCode,
+              taskStatusName: displayTaskStatusName,
+              taskStatusCode: displayTaskStatusCode,
               userFullName: statement.userFullName,
               // Сохраняем оригинальные данные для возможного использования
               originalData: statement

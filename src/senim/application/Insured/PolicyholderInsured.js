@@ -6,8 +6,11 @@ import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderToggleButton } from './InsuredFormFields';
+import { mapInsuredToContragent } from '../Policyholder';
+import { updateContragent, getProcessInstanceDetails } from '../../../services/processService';
+import { getAccessToken, loadApplicationMetadata } from '../../../services/storageService';
 
-const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, savedData, onOpenTypes }) => {
+const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, taskId, savedData, onOpenTypes }) => {
   // Основной currentView для переключения между этапами
   // eslint-disable-next-line no-unused-vars
   const [currentView, setCurrentView] = useState('main');
@@ -143,7 +146,59 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
     }));
   };
 
-  const handleFinalSave = () => {
+  const handleFinalSave = async () => {
+    // Сохраняем в API через Contragent PUT
+    if (applicationId) {
+      try {
+        const token = getAccessToken();
+        if (token) {
+          // Получаем taskId
+          let actualTaskId = taskId;
+          if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
+            const metadata = loadApplicationMetadata(applicationId);
+            if (metadata?.taskId && metadata.taskId !== applicationId) {
+              actualTaskId = metadata.taskId;
+            } else {
+              try {
+                const processInstance = await getProcessInstanceDetails(applicationId, token);
+                if (processInstance?.taskId && processInstance.taskId !== applicationId) {
+                  actualTaskId = processInstance.taskId;
+                } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
+                  const firstTask = processInstance.tasks[0];
+                  if (firstTask?.id && firstTask.id !== applicationId) {
+                    actualTaskId = firstTask.id;
+                  }
+                }
+              } catch (error) {
+                console.warn('⚠️ [INSURED] Не удалось получить processInstance:', error.message);
+              }
+            }
+          }
+          
+          let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
+          
+          if (accessIdForAPI && accessIdForAPI.trim() !== '') {
+            try {
+              // Преобразуем данные в формат API
+              const contragentData = mapInsuredToContragent(policyholderData, 'policyholder');
+              
+              console.log('📤 [INSURED] Отправка данных застрахованного в API с accessId:', accessIdForAPI);
+              console.log('📤 [INSURED] Данные застрахованного:', JSON.stringify(contragentData, null, 2));
+              
+              // Вызываем PUT для сохранения/обновления контрагента
+              await updateContragent(contragentData, accessIdForAPI.trim(), token);
+              
+              console.log('✅ [INSURED] Данные застрахованного сохранены в API');
+            } catch (error) {
+              console.error('Ошибка сохранения застрахованного в API:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка сохранения застрахованного в API:', error);
+      }
+    }
+
     if (onSave) {
       // Сохраняем все данные для восстановления
       const dataToSave = {

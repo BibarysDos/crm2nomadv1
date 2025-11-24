@@ -371,12 +371,16 @@ function App() {
         taskStatusCode: statusData?.taskStatusCode || null,
         taskStatusName: statusData?.taskStatusName || null,
         taskId: statusData?.taskId || null,
-        canClaim: canClaimInfo?.canClaim ?? false
+        canClaim: canClaimInfo?.canClaim ?? false,
+        folderType: 'Task' // Новая заявка - это задача
       };
 
       saveApplicationMetadata(applicationId, metadataUpdate);
       const processState = extractProcessStateFromMetadata(metadataUpdate);
       setProcessState(processState);
+      
+      // Устанавливаем folderType для новой заявки (это задача)
+      setFolderType('Task');
       
       // Обновляем processState через refreshProcessState для консистентности
       await refreshProcessState(applicationId);
@@ -412,11 +416,21 @@ function App() {
       }
       
       // processInstanceId может быть в applicationData или равен applicationId
-      processInstanceId = applicationData.processInstanceId || applicationId;
-      const taskIdFromList = applicationData?.taskId || applicationData?.originalData?.taskId || null;
+      const folderType = applicationData?.folderType || 'Statement'; // Тип папки: Statement или Task
+      const isTask = folderType === 'Task' || folderType === 'Tasks' || applicationData?.isTask === true;
+      
+      // Для задач (Task) используем applicationId (который является id/taskId), для заявлений (Statement) - processInstanceId
+      if (isTask) {
+        // Для задач: applicationId = id (taskId), processInstanceId берем из данных
+        processInstanceId = applicationData.processInstanceId || applicationId;
+      } else {
+        // Для заявлений: applicationId может быть и taskId, и processId, используем processInstanceId
+        processInstanceId = applicationData.processInstanceId || applicationId;
+      }
+      
+      const taskIdFromList = applicationData?.taskId || applicationData?.originalData?.taskId || (isTask ? applicationId : null);
       const taskStatusNameFromList = applicationData?.taskStatusName || applicationData?.originalData?.taskStatusName || null;
       const taskStatusCodeFromList = applicationData?.taskStatusCode || applicationData?.originalData?.taskStatusCode || null;
-      const folderType = applicationData?.folderType || 'Statement'; // Тип папки: Statement или Task
       
       let statusData = null;
       let canClaimInfo = null;
@@ -513,11 +527,16 @@ function App() {
       }
     }
     
-    // Используем processId для работы с данными заявки
-    setCurrentApplicationId(processInstanceId);
-    setCurrentApplicationIdState(processInstanceId);
+    // Для задач используем applicationId (id/taskId), для заявлений - processInstanceId
+    const finalApplicationId = (applicationData && (applicationData.folderType === 'Task' || applicationData.folderType === 'Tasks' || applicationData.isTask === true)) 
+      ? applicationId  // Для задач используем id (taskId)
+      : processInstanceId; // Для заявлений используем processInstanceId
+    
+    setCurrentApplicationId(finalApplicationId);
+    setCurrentApplicationIdState(finalApplicationId);
     setSelectedProduct(product || 'Сенiм'); // По умолчанию Сенiм
 
+    // Для refreshProcessState используем processInstanceId (нужен для API)
     await refreshProcessState(processInstanceId);
     setCurrentView('application');
   };

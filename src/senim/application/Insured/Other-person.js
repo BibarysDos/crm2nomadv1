@@ -7,8 +7,11 @@ import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
 import { getPerson, mapApiDataToForm } from '../../../services/personService';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderAttachField, renderToggleButton } from './InsuredFormFields';
+import { mapInsuredToContragent } from '../Policyholder';
+import { updateContragent, getProcessInstanceDetails } from '../../../services/processService';
+import { getAccessToken, loadApplicationMetadata } from '../../../services/storageService';
 
-const OtherPerson = ({ onBack, onSave, applicationId, savedData, onOpenTypes }) => {
+const OtherPerson = ({ onBack, onSave, applicationId, taskId, savedData, onOpenTypes }) => {
   // Основной currentView
   // eslint-disable-next-line no-unused-vars
   const [currentView, setCurrentView] = useState('main');
@@ -336,7 +339,59 @@ const OtherPerson = ({ onBack, onSave, applicationId, savedData, onOpenTypes }) 
     }
   };
 
-  const handleFinalSave = () => {
+  const handleFinalSave = async () => {
+    // Сохраняем в API через Contragent PUT
+    if (applicationId) {
+      try {
+        const token = getAccessToken();
+        if (token) {
+          // Получаем taskId
+          let actualTaskId = taskId;
+          if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
+            const metadata = loadApplicationMetadata(applicationId);
+            if (metadata?.taskId && metadata.taskId !== applicationId) {
+              actualTaskId = metadata.taskId;
+            } else {
+              try {
+                const processInstance = await getProcessInstanceDetails(applicationId, token);
+                if (processInstance?.taskId && processInstance.taskId !== applicationId) {
+                  actualTaskId = processInstance.taskId;
+                } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
+                  const firstTask = processInstance.tasks[0];
+                  if (firstTask?.id && firstTask.id !== applicationId) {
+                    actualTaskId = firstTask.id;
+                  }
+                }
+              } catch (error) {
+                console.warn('⚠️ [INSURED] Не удалось получить processInstance:', error.message);
+              }
+            }
+          }
+          
+          let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
+          
+          if (accessIdForAPI && accessIdForAPI.trim() !== '') {
+            try {
+              // Преобразуем данные в формат API
+              const contragentData = mapInsuredToContragent(insuredData, 'other-person');
+              
+              console.log('📤 [INSURED] Отправка данных застрахованного (иное лицо) в API с accessId:', accessIdForAPI);
+              console.log('📤 [INSURED] Данные застрахованного:', JSON.stringify(contragentData, null, 2));
+              
+              // Вызываем PUT для сохранения/обновления контрагента
+              await updateContragent(contragentData, accessIdForAPI.trim(), token);
+              
+              console.log('✅ [INSURED] Данные застрахованного сохранены в API');
+            } catch (error) {
+              console.error('Ошибка сохранения застрахованного в API:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка сохранения застрахованного в API:', error);
+      }
+    }
+
     if (onSave) {
       // Сохраняем все данные для восстановления
       const dataToSave = {
@@ -455,13 +510,38 @@ const OtherPerson = ({ onBack, onSave, applicationId, savedData, onOpenTypes }) 
         ) : null}
         <div data-layer="Filds list" className="FildsList" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
           {renderToggleButton('Ручной ввод данных', manualInput, handleToggleManualInput)}
-          {!manualInput && (autoModeState === 'initial' || autoModeState === 'request_sent') && (
+          {!manualInput && (
             <>
               {renderInputField('iin', 'ИИН', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
               {renderInputField('telephone', 'Номер телефона', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+              {/* В состоянии data_loaded показываем все остальные поля */}
+              {autoModeState === 'data_loaded' && (
+                <>
+                  {renderDictionaryButton('residency', 'Признак резидентства', getDictionaryDisplayValue(insuredData.residency), () => {}, !!insuredData.residency)}
+                  {renderInputField('surname', 'Фамилия', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderInputField('name', 'Имя', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderInputField('patronymic', 'Отчество', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderCalendarField('birthDate', 'Дата рождения', insuredData.birthDate)}
+                  {renderDictionaryButton('gender', 'Пол', getDictionaryDisplayValue(insuredData.gender), handleOpenGender, !!insuredData.gender)}
+                  {renderDictionaryButton('economSecId', 'Код сектора экономики', getDictionaryDisplayValue(insuredData.economSecId), handleOpenSectorCode, !!insuredData.economSecId)}
+                  {renderDictionaryButton('countryId', 'Страна', getDictionaryDisplayValue(insuredData.countryId), handleOpenCountry, !!insuredData.countryId)}
+                  {renderDictionaryButton('district_nameru', 'Область', getDictionaryDisplayValue(insuredData.district_nameru), handleOpenRegion, !!insuredData.district_nameru)}
+                  {renderInputField('settlementName', 'Название населенного пункта', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderInputField('street', 'Улица', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderInputField('houseNumber', '№ дома', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderInputField('apartmentNumber', '№ квартиры', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderAttachField('documentFile', 'Документ подтверждающий личность', insuredData.documentFile)}
+                  {renderDictionaryButton('vidDocId', 'Тип документа', getDictionaryDisplayValue(insuredData.vidDocId), handleOpenDocType, !!insuredData.vidDocId)}
+                  {renderInputField('docNumber', 'Номер документа', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+                  {renderDictionaryButton('issuedBy', 'Кем выдано', getDictionaryDisplayValue(insuredData.issuedBy), handleOpenIssuedBy, !!insuredData.issuedBy)}
+                  {renderCalendarField('issueDate', 'Выдан от', insuredData.issueDate)}
+                  {renderCalendarField('expiryDate', 'Действует до', insuredData.expiryDate)}
+                  {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
+                </>
+              )}
             </>
           )}
-          {(manualInput || autoModeState === 'data_loaded' || autoModeState === 'response_received') && (
+          {manualInput && (
             <>
               {renderDictionaryButton('residency', 'Признак резидентства', getDictionaryDisplayValue(insuredData.residency), () => {}, !!insuredData.residency)}
               {renderInputField('iin', 'ИИН', insuredData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
