@@ -1,59 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { loadApplicationHistory } from '../../services/storageService';
-
-const sanitizeValue = (value) => {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed || trimmed === '-') {
-      return '';
-    }
-    return trimmed;
-  }
-  return value;
-};
-
-const formatHistoryDate = (value) => {
-  if (!value) {
-    return '—';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  // Автоматически конвертируем UTC в локальное время браузера
-  return parsed.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
-
-const mapHistoryRow = (item = {}) => ({
-  stage: sanitizeValue(item.stage) ||
-    sanitizeValue(item.role) ||
-    sanitizeValue(item.statusTitle) ||
-    sanitizeValue(item.statusCode) ||
-    '',
-  performer: sanitizeValue(item.performer) ||
-    sanitizeValue(item.executorName) ||
-    sanitizeValue(item.userFullName) ||
-    '',
-  eventDate: sanitizeValue(item.eventDate) ||
-    sanitizeValue(item.executionDate) ||
-    sanitizeValue(item.factEndDate) ||
-    sanitizeValue(item.dateCreated) ||
-    '',
-  decision: sanitizeValue(item.decision) ||
-    sanitizeValue(item.status) ||
-    sanitizeValue(item.decisionNameRu) ||
-    '',
-  comment: sanitizeValue(item.comment) || sanitizeValue(item.reason) || ''
-});
+import { normalizeHistoryData, formatHistoryDateTime } from '../services/historyService';
 
 const History = ({ onBack, applicationId }) => {
   const [historyItems, setHistoryItems] = useState([]);
@@ -63,11 +10,8 @@ const History = ({ onBack, applicationId }) => {
       return;
     }
     const data = loadApplicationHistory(applicationId);
-    if (data && Array.isArray(data.items)) {
-      setHistoryItems(data.items.map(mapHistoryRow));
-    } else {
-      setHistoryItems([]);
-    }
+    const normalized = normalizeHistoryData(data || {});
+    setHistoryItems(normalized.items || []);
   }, [applicationId]);
 
   const columns = ['Этап процесса', 'Исполнитель', 'Дата события', 'Решение', 'Комментарий'];
@@ -114,7 +58,7 @@ const History = ({ onBack, applicationId }) => {
               <div key={`${item.stage}-${index}`} data-layer="History row" className="HistoryRow" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>
                 <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.stage || '—'}</div>
                 <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.performer || '—'}</div>
-                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{formatHistoryDate(item.eventDate)}</div>
+                <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.eventDate ? formatHistoryDateTime(item.eventDate) : '—'}</div>
                 <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.decision || '—'}</div>
                 <div data-layer="History cell" className="HistoryCell" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word'}}>{item.comment || '—'}</div>
               </div>

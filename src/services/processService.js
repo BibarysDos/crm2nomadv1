@@ -261,28 +261,37 @@ export const getContragent = async (contragentId, accessId, token) => {
  * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
  * @returns {Promise<Object>} Обновленные данные контрагента
  */
-export const updateContragent = async (contragentData, taskId, token) => {
+export const updateContragent = async (contragentData, accessId, token) => {
   if (!contragentData) {
     throw new Error('Данные контрагента не указаны');
   }
-  if (!taskId) {
-    throw new Error('ID задачи (taskId) не указан');
+  if (!accessId) {
+    throw new Error('accessId не указан');
   }
   const authToken = getTokenOrThrow(token);
 
-  // API требует taskId - согласно Postman примеру, используем accessId в URL (но это taskId)
-  // НЕ добавляем taskId в тело запроса, так как это может вызвать конфликт
-  // Убираем taskId из contragentData, если он там есть
+  // Формат, который реально работает на backend (как в твоём последнем примере):
+  //   PUT /api/Contragent?accessId={id_последней_задачи_из_истории}
+  // В теле передаём полный объект с полем id (для update) или "0000..." / без id (для create).
   const { taskId: _, ...cleanContragentData } = contragentData;
   const requestBody = cleanContragentData;
 
-  const taskIdParam = String(taskId).trim();
-  // Используем accessId в URL (как в Postman примере), но передаем taskId
-  const url = `${STATEMENT_BASE_URL}/Contragent?accessId=${encodeURIComponent(taskIdParam)}`;
-  
-  console.log('🔍 [updateContragent] URL:', url);
-  console.log('🔍 [updateContragent] accessId (taskId) в URL:', taskIdParam);
-  console.log('🔍 [updateContragent] Тело запроса (без taskId):', JSON.stringify(requestBody, null, 2));
+  let accessIdParam = String(accessId).trim();
+
+  // По договорённости: accessId должен быть ID последней задачи из истории процесса.
+  // Ответ history — это массив объектов с полем id (а не taskId), берём последний по массиву.
+  try {
+    const history = await getProcessHistory(accessIdParam, token);
+    if (Array.isArray(history) && history.length > 0) {
+      const last = history[history.length - 1];
+      if (last?.id) {
+        accessIdParam = String(last.id).trim();
+      }
+    }
+  } catch (e) {
+    // ignore history errors, fallback to исходный accessId
+  }
+  const url = `${STATEMENT_BASE_URL}/Contragent?accessId=${encodeURIComponent(accessIdParam)}`;
 
   const response = await fetch(url, {
     method: 'PUT',
@@ -298,3 +307,35 @@ export const updateContragent = async (contragentData, taskId, token) => {
   return handleResponse(response, 'Ошибка обновления данных контрагента');
 };
 
+export const getStatementParticipants = async (accessId, token) => {
+  if (!accessId) {
+    throw new Error('accessId не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  // Используем ProcessInstance для получения участников, так как он уже содержит contragents
+  // Это более надежный способ, так как /Statement/participants возвращает 404
+  try {
+    const processDetails = await getProcessInstanceDetails(accessId, token);
+    if (processDetails?.contragents && Array.isArray(processDetails.contragents)) {
+      return processDetails.contragents;
+    }
+    return [];
+  } catch (error) {
+    // Альтернативный способ - через ProcessInstance напрямую
+    const response = await fetch(`${STATEMENT_BASE_URL}/ProcessInstance/${accessId}`, {
+      method: 'GET',
+      mode: 'cors',
+      headers: {
+        accept: '*/*',
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const processData = await handleResponse(response, 'Ошибка получения участников заявки');
+    if (processData?.contragents && Array.isArray(processData.contragents)) {
+      return processData.contragents;
+    }
+    return [];
+  }
+};

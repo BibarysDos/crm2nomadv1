@@ -5,12 +5,6 @@
 const STORAGE_KEYS = {
   POLICYHOLDER: 'policyholderData',
   INSURED: 'insuredData',
-  INSURED_OTHER_PERSON: 'insuredOtherPersonData',
-  INSURED_PARENT: 'insuredParentData',
-  INSURED_POLICYHOLDER: 'insuredPolicyholderData',
-  INSURED_OWN_CHILD: 'insuredOwnChildData',
-  INSURED_OTHER_CHILD_PARENT: 'insuredOtherChildParentData',
-  INSURED_OTHER_CHILD_CHILD: 'insuredOtherChildChildData',
   CURRENT_APPLICATION_ID: 'currentApplicationId',
   APPLICATION_HISTORY: 'applicationHistory',
   APPLICATION_BENEFICIARY: 'applicationBeneficiary',
@@ -178,211 +172,8 @@ export const clearInsuredData = (applicationId = null) => {
   }
 };
 
-/**
- * Сохранить данные "иного лица" в localStorage
- * @param {Object} data - Данные иного лица
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredOtherPersonData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_PERSON);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured other person data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные "иного лица" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные иного лица или null
- */
-export const loadInsuredOtherPersonData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_PERSON);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured other person data from localStorage:', error);
-    return null;
-  }
-};
-
-/**
- * Сохранить данные "родителя/опекуна" в localStorage
- * @param {Object} data - Данные родителя/опекуна
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredParentData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_PARENT);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured parent data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные "родителя/опекуна" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные родителя/опекуна или null
- */
-export const loadInsuredParentData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_PARENT);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured parent data from localStorage:', error);
-    return null;
-  }
-};
-
-/**
- * Очистить данные "иного лица" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const clearInsuredOtherPersonData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_PERSON);
-    localStorage.removeItem(key);
-  } catch (error) {
-    console.error('Error clearing insured other person data from localStorage:', error);
-  }
-};
-
-/**
- * Очистить данные "родителя/опекуна" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const clearInsuredParentData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_PARENT);
-    localStorage.removeItem(key);
-  } catch (error) {
-    console.error('Error clearing insured parent data from localStorage:', error);
-  }
-};
-
-/**
- * Сохранить данные "страхователь является застрахованным" в localStorage
- * @param {Object} data - Данные страхователя-застрахованного
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredPolicyholderData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_POLICYHOLDER);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured policyholder data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные "страхователь является застрахованным" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные страхователя-застрахованного или null
- */
-export const loadInsuredPolicyholderData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_POLICYHOLDER);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured policyholder data from localStorage:', error);
-    return null;
-  }
-};
-
-/**
- * Сохранить данные "свой ребенок" в localStorage
- * @param {Object} data - Данные своего ребенка
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredOwnChildData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OWN_CHILD);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured own child data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные "свой ребенок" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные своего ребенка или null
- */
-export const loadInsuredOwnChildData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OWN_CHILD);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured own child data from localStorage:', error);
-    return null;
-  }
-};
-
-/**
- * Сохранить данные родителя для "иной ребенок" в localStorage
- * @param {Object} data - Данные родителя для иного ребенка
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredOtherChildParentData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_PARENT);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured other child parent data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные родителя для "иной ребенок" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные родителя для иного ребенка или null
- */
-export const loadInsuredOtherChildParentData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_PARENT);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured other child parent data from localStorage:', error);
-    return null;
-  }
-};
-
-/**
- * Сохранить данные ребенка для "иной ребенок" в localStorage
- * @param {Object} data - Данные ребенка для иного ребенка
- * @param {string} applicationId - ID заявки (опционально)
- */
-export const saveInsuredOtherChildChildData = (data, applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_CHILD);
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error('Error saving insured other child child data to localStorage:', error);
-  }
-};
-
-/**
- * Загрузить данные ребенка для "иной ребенок" из localStorage
- * @param {string} applicationId - ID заявки (опционально)
- * @returns {Object|null} Данные ребенка для иного ребенка или null
- */
-export const loadInsuredOtherChildChildData = (applicationId = null) => {
-  try {
-    const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_CHILD);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error loading insured other child child data from localStorage:', error);
-    return null;
-  }
-};
+// Все специализированные Insured-* сохранения (other-person, own-child и т.п.)
+// убраны — используем единый saveInsuredData/loadInsuredData для застрахованного.
 
 /**
  * Очистить данные "страхователь является застрахованным" из localStorage
@@ -455,9 +246,7 @@ export const clearAllData = () => {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
-    console.log('All data cleared from localStorage');
   } catch (error) {
-    console.error('Error clearing all data from localStorage:', error);
   }
 };
 
@@ -589,12 +378,10 @@ export const loadGlobalApplicationData = (applicationId = null) => {
     const data = localStorage.getItem(key);
     if (data) {
       const parsed = JSON.parse(data);
-      console.log('📖 [GLOBAL APPLICATION DATA] Загружено:', JSON.parse(JSON.stringify(parsed)));
       return parsed;
     }
     return null;
   } catch (error) {
-    console.error('Error loading global application data from localStorage:', error);
     return null;
   }
 };
@@ -620,9 +407,7 @@ export const saveGlobalApplicationData = (globalData, applicationId = null) => {
     // чтобы не влиять на другие данные при сохранении
     
     localStorage.setItem(key, JSON.stringify(updatedData));
-    console.log('💾 [GLOBAL APPLICATION DATA] Сохранено:', JSON.parse(JSON.stringify(updatedData)));
   } catch (error) {
-    console.error('Error saving global application data to localStorage:', error);
   }
 };
 
@@ -637,6 +422,12 @@ export const updateGlobalApplicationSection = (section, sectionData, application
     // НЕ сохраняем Policyholder в global storage - полностью отказываемся от него
     if (section === 'Policyholder') {
       console.log('⚠️ [GLOBAL STORAGE] Попытка сохранить Policyholder в global storage - игнорируем (полностью отказались от global storage для Policyholder)');
+      return;
+    }
+
+    // НЕ сохраняем Insured в global storage — для застрахованного используем только локальное хранилище
+    if (section === 'Insured') {
+      console.log('⚠️ [GLOBAL STORAGE] Попытка сохранить Insured в global storage - игнорируем (используем только локальное хранение для Insured)');
       return;
     }
     

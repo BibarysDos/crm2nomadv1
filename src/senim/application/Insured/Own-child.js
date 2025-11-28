@@ -7,9 +7,8 @@ import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
 import { getChildren, getChildFullName, formatDate as formatChildDate } from '../../../services/childService';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderAttachField, renderToggleButton } from './InsuredFormFields';
-import { mapInsuredToContragent } from '../Policyholder';
-import { updateContragent, getProcessInstanceDetails } from '../../../services/processService';
-import { getAccessToken, loadApplicationMetadata } from '../../../services/storageService';
+import { saveOwnChildToApi } from '../../services/ownChildApiService';
+import { mapContragentToInsuredForApplication } from '../../services/processFacade';
 
 const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyholderData, savedData }) => {
   // Основной currentView для переключения между этапами: 'main', 'choose-child', 'filled'
@@ -20,7 +19,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
 
   // Состояние для ручного ввода данных ребенка
   const [manualChildInput, setManualChildInput] = useState(false);
-  
+
   // Состояние для тоггла "Адрес проживания совпадает с адресом родителя"
   const [addressMatchesParent, setAddressMatchesParent] = useState(true);
 
@@ -62,35 +61,214 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   const [childSectionCollapsed, setChildSectionCollapsed] = useState(false);
   const [parentSectionCollapsed, setParentSectionCollapsed] = useState(true);
 
+  // Отладочное логирование состояния
+  useEffect(() => {
+    console.log('[OWN_CHILD] Текущее состояние:', {
+      currentView,
+      childSectionCollapsed,
+      hasChildData: !!(childData.iin || childData.name || childData.surname),
+      childData: {
+        iin: childData.iin,
+        name: childData.name,
+        surname: childData.surname
+      }
+    });
+  }, [currentView, childSectionCollapsed, childData.iin, childData.name, childData.surname]);
+
   // Восстановление сохраненных данных при монтировании
   useEffect(() => {
-    if (savedData && savedData.fullData) {
-      const restored = savedData.fullData;
-      
+    if (savedData) {
+      // Приоритет: данные из getContragent (fullInsured) - самые полные
+      // Данные ребенка могут быть в разных местах:
+      // 1. В savedData.fullData.fullInsured (данные из getContragent - ПРИОРИТЕТ)
+      // 2. В savedData.fullData.childData (когда сохраняются из формы)
+      // 3. В savedData напрямую (когда приходят из ProcessInstance через spread ...mappedInsuredData)
+      let childDataFromSaved = null;
+
+      // ПРИОРИТЕТ 1: Если есть данные из getContragent (fullInsured), используем их
+      if (savedData.fullData?.fullInsured) {
+        console.log('[OWN_CHILD] Найдены данные из getContragent (fullInsured)');
+        const mappedChildData = mapContragentToInsuredForApplication(savedData.fullData.fullInsured);
+        console.log('[OWN_CHILD] Маппированные данные ребенка:', mappedChildData);
+        if (mappedChildData && (mappedChildData.iin || mappedChildData.name || mappedChildData.surname)) {
+          childDataFromSaved = mappedChildData;
+          console.log('[OWN_CHILD] Данные ребенка успешно извлечены из fullInsured');
+        } else {
+          console.warn('[OWN_CHILD] Данные из fullInsured не содержат необходимых полей (iin, name, surname)');
+        }
+      } else {
+        console.log('[OWN_CHILD] Нет данных из getContragent (fullInsured)');
+      }
+
+      // ПРИОРИТЕТ 2: Если нет данных из getContragent, используем сохраненные данные из формы
+      if (!childDataFromSaved && savedData.fullData?.childData) {
+        const savedChildData = savedData.fullData.childData;
+        if (savedChildData && (savedChildData.iin || savedChildData.name || savedChildData.surname)) {
+          childDataFromSaved = savedChildData;
+        }
+      }
+
+      // ПРИОРИТЕТ 3: Если нет в fullData, берем из savedData напрямую
+      if (!childDataFromSaved) {
+        const { fullData, ...dataWithoutFullData } = savedData;
+        if (dataWithoutFullData && (dataWithoutFullData.iin || dataWithoutFullData.name || dataWithoutFullData.surname)) {
+          childDataFromSaved = dataWithoutFullData;
+        }
+      }
+
+      // Отладочное логирование
+      console.log('[OWN_CHILD] Восстановление данных:', {
+        hasSavedData: !!savedData,
+        hasFullData: !!savedData.fullData,
+        hasFullInsured: !!savedData.fullData?.fullInsured,
+        hasLegalRep: !!savedData.fullData?.legalRep,
+        childDataFromSaved: childDataFromSaved ? {
+          hasData: true,
+          iin: childDataFromSaved.iin,
+          name: childDataFromSaved.name,
+          surname: childDataFromSaved.surname,
+          gender: childDataFromSaved.gender,
+          economSecId: childDataFromSaved.economSecId,
+          countryId: childDataFromSaved.countryId,
+          vidDocId: childDataFromSaved.vidDocId,
+          issuedBy: childDataFromSaved.issuedBy
+        } : null,
+        currentViewBefore: currentView
+      });
+
       // Восстанавливаем данные ребенка
-      if (restored.childData) {
-        setChildData(restored.childData);
+      if (childDataFromSaved && (childDataFromSaved.iin || childDataFromSaved.name || childDataFromSaved.surname)) {
+        // Функция для правильной обработки значений
+        const getValue = (value, defaultValue = '') => {
+          return value !== undefined && value !== null ? value : defaultValue;
+        };
+
+        // Функция для правильной обработки объектов справочников
+        const getDictionaryValue = (value) => {
+          if (value === undefined || value === null) {
+            return undefined;
+          }
+          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            return value;
+          }
+          if (value === '') {
+            return '';
+          }
+          return value;
+        };
+
+        const getDictionaryOrPrev = (restored, prevValue) => {
+          if (restored !== undefined) {
+            return restored;
+          }
+          return prevValue !== undefined ? prevValue : '';
+        };
+
+        // Извлекаем значения справочников
+        const restoredGender = getDictionaryValue(childDataFromSaved.gender);
+        const restoredEconomSecId = getDictionaryValue(childDataFromSaved.economSecId);
+        const restoredCountryId = getDictionaryValue(childDataFromSaved.countryId);
+        const restoredVidDocId = getDictionaryValue(childDataFromSaved.vidDocId);
+        const restoredIssuedBy = getDictionaryValue(childDataFromSaved.issuedBy);
+
+        // Вычисляем финальные значения справочников
+        const finalGender = getDictionaryOrPrev(restoredGender, undefined);
+        const finalEconomSecId = getDictionaryOrPrev(restoredEconomSecId, undefined);
+        const finalCountryId = getDictionaryOrPrev(restoredCountryId, undefined);
+        const finalVidDocId = getDictionaryOrPrev(restoredVidDocId, undefined);
+        const finalIssuedBy = getDictionaryOrPrev(restoredIssuedBy, undefined);
+
+        setChildData(prev => ({
+          iin: getValue(childDataFromSaved.iin, prev.iin || ''),
+          telephone: getValue(childDataFromSaved.telephone, prev.telephone || ''),
+          name: getValue(childDataFromSaved.name, prev.name || ''),
+          surname: getValue(childDataFromSaved.surname, prev.surname || ''),
+          patronymic: getValue(childDataFromSaved.patronymic, prev.patronymic || ''),
+          street: getValue(childDataFromSaved.street, prev.street || ''),
+          houseNumber: getValue(childDataFromSaved.houseNumber, prev.houseNumber || ''),
+          apartmentNumber: getValue(childDataFromSaved.apartmentNumber, prev.apartmentNumber || ''),
+          docNumber: getValue(childDataFromSaved.docNumber, prev.docNumber || ''),
+          birthDate: getValue(childDataFromSaved.birthDate, prev.birthDate || ''),
+          issueDate: getValue(childDataFromSaved.issueDate, prev.issueDate || ''),
+          expiryDate: getValue(childDataFromSaved.expiryDate, prev.expiryDate || ''),
+          // Справочники - используем предварительно вычисленные значения
+          gender: finalGender !== undefined ? finalGender : prev.gender || '',
+          economSecId: finalEconomSecId !== undefined ? finalEconomSecId : prev.economSecId || '',
+          countryId: finalCountryId !== undefined ? finalCountryId : prev.countryId || '',
+          vidDocId: finalVidDocId !== undefined ? finalVidDocId : prev.vidDocId || '',
+          issuedBy: finalIssuedBy !== undefined ? finalIssuedBy : prev.issuedBy || '',
+          // Обычные строковые поля
+          district_nameru: getValue(childDataFromSaved.district_nameru, prev.district_nameru || ''),
+          settlementName: getValue(childDataFromSaved.settlementName, prev.settlementName || ''),
+          residency: getValue(childDataFromSaved.residency, prev.residency || 'Резидент')
+        }));
+
+        // Автоматически открываем форму с заполненными данными
+        // Если есть данные ребенка из getContragent, всегда открываем форму 'filled'
+        console.log('[OWN_CHILD] Устанавливаем currentView в "filled" и разворачиваем секцию ребенка');
+        console.log('[OWN_CHILD] Данные ребенка для установки:', {
+          iin: childDataFromSaved.iin,
+          name: childDataFromSaved.name,
+          surname: childDataFromSaved.surname
+        });
+        // Устанавливаем view и разворачиваем секцию СРАЗУ, не ждем следующего рендера
+        setCurrentView('filled');
+        setChildSectionCollapsed(false);
+        console.log('[OWN_CHILD] currentView установлен в "filled", childSectionCollapsed установлен в false');
+      } else {
+        console.log('[OWN_CHILD] Нет данных ребенка для восстановления - childDataFromSaved:', childDataFromSaved);
       }
-      if (restored.selectedChild) {
-        setSelectedChild(restored.selectedChild);
+
+      // Восстанавливаем данные из fullData (если есть)
+      if (savedData.fullData) {
+        const restored = savedData.fullData;
+
+        // ПРИОРИТЕТ 2: Если нет данных из getContragent, используем сохраненные данные из формы
+        if (!childDataFromSaved && restored.childData) {
+          setChildData(restored.childData);
+          childDataFromSaved = restored.childData; // Помечаем, что данные есть
+        }
+
+        if (restored.selectedChild) {
+          setSelectedChild(restored.selectedChild);
+        }
+
+        // Восстанавливаем состояния тогглов
+        if (restored.manualChildInput !== undefined) {
+          setManualChildInput(restored.manualChildInput);
+        }
+        if (restored.addressMatchesParent !== undefined) {
+          setAddressMatchesParent(restored.addressMatchesParent);
+        }
+        if (restored.toggleStates) {
+          setToggleStates(restored.toggleStates);
+        }
+
+        // Восстанавливаем view: если не задан, но есть fullInsured или childData, сразу открываем заполненную форму
+        // Логика как в Other-child: если есть данные ребенка, пропускаем экран выбора
+        if (restored.currentView) {
+          // Если явно сохранен view, используем его только если нет данных ребенка
+          if (!childDataFromSaved) {
+            console.log('[OWN_CHILD] Восстанавливаем currentView из fullData:', restored.currentView);
+            setCurrentView(restored.currentView);
+          }
+        } else if (restored.fullInsured || restored.childData || childDataFromSaved) {
+          // Если есть данные ребенка (из любого источника), сразу открываем форму
+          console.log('[OWN_CHILD] Есть данные ребенка - открываем форму "filled" (пропускаем выбор)');
+          setCurrentView('filled');
+          setChildSectionCollapsed(false);
+        }
       }
-      
-      // Восстанавливаем состояния тогглов
-      if (restored.manualChildInput !== undefined) {
-        setManualChildInput(restored.manualChildInput);
-      }
-      if (restored.addressMatchesParent !== undefined) {
-        setAddressMatchesParent(restored.addressMatchesParent);
-      }
-      if (restored.toggleStates) {
-        setToggleStates(restored.toggleStates);
-      }
-      
-      // Восстанавливаем view
-      if (restored.currentView) {
-        setCurrentView(restored.currentView);
+
+      // ФИНАЛЬНАЯ ПРОВЕРКА: Если есть данные ребенка, гарантируем, что view установлен в 'filled'
+      // Это нужно сделать в конце, чтобы перезаписать любые другие значения
+      if (childDataFromSaved && (childDataFromSaved.iin || childDataFromSaved.name || childDataFromSaved.surname)) {
+        console.log('[OWN_CHILD] ФИНАЛЬНАЯ ПРОВЕРКА: Устанавливаем currentView в "filled" и разворачиваем секцию');
+        setCurrentView('filled');
+        setChildSectionCollapsed(false);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedData]);
 
   // Загрузка детей при переходе на экран выбора
@@ -105,7 +283,6 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
           const childrenData = await getChildren(iinClean, phoneClean);
           setChildren(childrenData);
         } catch (err) {
-          console.error('Error loading children:', err);
           setError('Ошибка при загрузке данных о детях');
         } finally {
           setLoading(false);
@@ -300,9 +477,26 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   };
 
   const handleChildFieldChange = (fieldName, value) => {
+    let processedValue = value;
+    
+    // Маска для телефона (+7)
+    if (fieldName === 'telephone') {
+      // Логика форматирования телефона
+      let cleaned = value.replace(/[^\d+]/g, '');
+      if (cleaned.startsWith('+7')) cleaned = cleaned.substring(2);
+      else if (cleaned.startsWith('7') || cleaned.startsWith('8')) cleaned = cleaned.substring(1);
+      cleaned = cleaned.substring(0, 10);
+
+      if (cleaned.length === 0) processedValue = '+7';
+      else if (cleaned.length <= 3) processedValue = `+7 (${cleaned}`;
+      else if (cleaned.length <= 6) processedValue = `+7 (${cleaned.substring(0, 3)}) ${cleaned.substring(3)}`;
+      else if (cleaned.length <= 8) processedValue = `+7 (${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
+      else processedValue = `+7 (${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6, 8)}-${cleaned.substring(8, 10)}`;
+    }
+
     setChildData(prev => ({
       ...prev,
-      [fieldName]: value
+      [fieldName]: processedValue
     }));
   };
 
@@ -316,7 +510,8 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   const getDictionaryDisplayValue = (value) => {
     if (!value) return '';
     if (typeof value === 'object') {
-      return value.name_ru || value.name || value.title || '';
+      // Проверяем все возможные варианты названий полей (nameRu используется в mapContragentToInsuredForApplication)
+      return value.nameRu || value.name_ru || value.name || value.title || '';
     }
     return value;
   };
@@ -346,55 +541,16 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   };
 
   const handleFinalSave = async () => {
-    // Сохраняем в API через Contragent PUT
+    // Сохраняем в API через сервис ownChildApiService
     if (applicationId) {
       try {
-        const token = getAccessToken();
-        if (token) {
-          // Получаем taskId
-          let actualTaskId = taskId;
-          if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
-            const metadata = loadApplicationMetadata(applicationId);
-            if (metadata?.taskId && metadata.taskId !== applicationId) {
-              actualTaskId = metadata.taskId;
-            } else {
-              try {
-                const processInstance = await getProcessInstanceDetails(applicationId, token);
-                if (processInstance?.taskId && processInstance.taskId !== applicationId) {
-                  actualTaskId = processInstance.taskId;
-                } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
-                  const firstTask = processInstance.tasks[0];
-                  if (firstTask?.id && firstTask.id !== applicationId) {
-                    actualTaskId = firstTask.id;
-                  }
-                }
-              } catch (error) {
-                console.warn('⚠️ [INSURED] Не удалось получить processInstance:', error.message);
-              }
-            }
-          }
-          
-          let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
-          
-          if (accessIdForAPI && accessIdForAPI.trim() !== '') {
-            try {
-              // Преобразуем данные ребенка в формат API
-              const contragentData = mapInsuredToContragent(childData, 'own-child');
-              
-              console.log('📤 [INSURED] Отправка данных застрахованного (свой ребенок) в API с accessId:', accessIdForAPI);
-              console.log('📤 [INSURED] Данные застрахованного:', JSON.stringify(contragentData, null, 2));
-              
-              // Вызываем PUT для сохранения/обновления контрагента
-              await updateContragent(contragentData, accessIdForAPI.trim(), token);
-              
-              console.log('✅ [INSURED] Данные застрахованного сохранены в API');
-            } catch (error) {
-              console.error('Ошибка сохранения застрахованного в API:', error);
-            }
-          }
-        }
+        await saveOwnChildToApi({
+          applicationId,
+          taskId,
+          childData,
+          parentData: policyholderData
+        });
       } catch (error) {
-        console.error('Ошибка сохранения застрахованного в API:', error);
       }
     }
 
@@ -409,7 +565,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         addressMatchesParent,
         currentView: currentView === 'filled' ? 'filled' : 'main'
       };
-      
+
       // Преобразуем childData для отображения в Application.js
       const displayData = {
         lastName: childData.surname || '',
@@ -419,7 +575,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         // Сохраняем полные данные для восстановления
         fullData: dataToSave
       };
-      
+
       onSave(displayData);
     }
     // Возвращаемся в Application.js
@@ -485,59 +641,59 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   // Рендеринг экрана выбора ребенка
   if (currentView === 'choose-child') {
     return (
-      <div data-layer="Selection child page" className="SelectionChildPage" style={{width: 1512, height: 982, justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-        <div data-layer="Menu" data-property-1="Menu three" className="Menu" style={{width: 85, height: 982, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-          <div data-layer="Menu button" className="MenuButton" onClick={() => setCurrentView('main')} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-            <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 31, top: 32, position: 'absolute'}}>
+      <div data-layer="Selection child page" className="SelectionChildPage" style={{ width: 1512, height: 982, justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Menu" data-property-1="Menu three" className="Menu" style={{ width: 85, height: 982, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+          <div data-layer="Menu button" className="MenuButton" onClick={() => setCurrentView('main')} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
+            <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 31, top: 32, position: 'absolute' }}>
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2"/>
+                <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2" />
               </svg>
             </div>
           </div>
         </div>
-        <div data-layer="Selection child" className="SelectionChild" style={{flex: '1 1 0', height: 982, background: 'white', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-          <div data-layer="SubHeader" data-type="Creating an order" className="Subheader" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex'}}>
-            <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
-              <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Выбрать ребенка</div>
+        <div data-layer="Selection child" className="SelectionChild" style={{ flex: '1 1 0', height: 982, background: 'white', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+          <div data-layer="SubHeader" data-type="Creating an order" className="Subheader" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
+            <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
+              <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Выбрать ребенка</div>
               {!error && children.length > 0 && (
-                <div data-layer="Save button" data-state="pressed" className="SaveButton" onClick={handleChildSave} style={{width: 388, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
-                  <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
+                <div data-layer="Save button" data-state="pressed" className="SaveButton" onClick={handleChildSave} style={{ width: 388, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer' }}>
+                  <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сохранить</div>
                 </div>
               )}
             </div>
           </div>
-          <div data-layer="Fields List" className="FieldsList" style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
+          <div data-layer="Fields List" className="FieldsList" style={{ alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
             {loading && (
-              <div data-layer="Loading" className="Loading" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>
-                <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Загрузка...</div>
+              <div data-layer="Loading" className="Loading" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex' }}>
+                <div data-layer="Label" className="Label" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Загрузка...</div>
               </div>
             )}
             {!loading && children.length > 0 && children.map((child, index) => {
               const fullName = getChildFullName(child);
               const isSelected = selectedChild && typeof selectedChild === 'object' && selectedChild.child_iin === child.child_iin;
               return (
-                <div 
-                  key={child.child_iin || index} 
-                  data-layer="InputContainerRadioButton" 
-                  data-state={isSelected ? 'pressed' : 'not_pressed'} 
-                  className="Inputcontainerradiobutton" 
-                  onClick={() => handleChildSelect(child)} 
-                  style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}
+                <div
+                  key={child.child_iin || index}
+                  data-layer="InputContainerRadioButton"
+                  data-state={isSelected ? 'pressed' : 'not_pressed'}
+                  className="Inputcontainerradiobutton"
+                  onClick={() => handleChildSelect(child)}
+                  style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer' }}
                 >
-                  <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-                    <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{fullName}</div>
+                  <div data-layer="Text container" className="TextContainer" style={{ flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex' }}>
+                    <div data-layer="Label" className="Label" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>{fullName}</div>
                   </div>
-                  <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
+                  <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
                     {isSelected ? (
-                      <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{left: 35, top: 36, position: 'absolute'}}>
+                      <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{ left: 35, top: 36, position: 'absolute' }}>
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
+                          <circle cx="7" cy="7" r="6.5" fill="black" stroke="black" />
                         </svg>
                       </div>
                     ) : (
-                      <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
+                      <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{ left: 35, top: 36, position: 'absolute' }}>
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="7" cy="7" r="6.5" stroke="black"/>
+                          <circle cx="7" cy="7" r="6.5" stroke="black" />
                         </svg>
                       </div>
                     )}
@@ -546,41 +702,41 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
               );
             })}
             {!loading && error && (
-              <div data-layer="Alert" className="Alert" style={{width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-                <div data-layer="Info container" className="InfoContainer" style={{width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden'}}>
-                  <div data-svg-wrapper data-layer="Info" className="Info" style={{left: 31, top: 32, position: 'absolute'}}>
+              <div data-layer="Alert" className="Alert" style={{ width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
+                  <div data-svg-wrapper data-layer="Info" className="Info" style={{ left: 31, top: 32, position: 'absolute' }}>
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <g clipPath="url(#clip0_785_24837)">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black"/>
-                    </g>
-                    <defs>
-                    <clipPath id="clip0_785_24837">
-                    <rect width="22" height="22" fill="white"/>
-                    </clipPath>
-                    </defs>
+                      <g clipPath="url(#clip0_785_24837)">
+                        <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black" />
+                      </g>
+                      <defs>
+                        <clipPath id="clip0_785_24837">
+                          <rect width="22" height="22" fill="white" />
+                        </clipPath>
+                      </defs>
                     </svg>
                   </div>
                 </div>
-                <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сервис не работает. Данные детей не получены.</div>
+                <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сервис не работает. Данные детей не получены.</div>
               </div>
             )}
             {!loading && !error && children.length === 0 && (
-              <div data-layer="Alert" className="Alert" style={{width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-                <div data-layer="Info container" className="InfoContainer" style={{width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden'}}>
-                  <div data-svg-wrapper data-layer="Info" className="Info" style={{left: 31, top: 32, position: 'absolute'}}>
+              <div data-layer="Alert" className="Alert" style={{ width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
+                  <div data-svg-wrapper data-layer="Info" className="Info" style={{ left: 31, top: 32, position: 'absolute' }}>
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <g clipPath="url(#clip0_785_24837)">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black"/>
-                    </g>
-                    <defs>
-                    <clipPath id="clip0_785_24837">
-                    <rect width="22" height="22" fill="white"/>
-                    </clipPath>
-                    </defs>
+                      <g clipPath="url(#clip0_785_24837)">
+                        <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black" />
+                      </g>
+                      <defs>
+                        <clipPath id="clip0_785_24837">
+                          <rect width="22" height="22" fill="white" />
+                        </clipPath>
+                      </defs>
                     </svg>
                   </div>
                 </div>
-                <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Детей нет.</div>
+                <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Детей нет.</div>
               </div>
             )}
           </div>
@@ -592,35 +748,35 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   // Рендеринг финальной формы с данными
   if (currentView === 'filled') {
     return (
-      <div data-layer="Insured data page" className="InsuredDataPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-        <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-          <div data-layer="Back button" className="BackButton" onClick={() => setCurrentView('main')} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-            <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 32, top: 32, position: 'absolute'}}>
+      <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+          <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
+            <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2"/>
+                <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2" />
               </svg>
             </div>
           </div>
         </div>
-        <div data-layer="Insured data" className="InsuredData" style={{width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-          <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex'}}>
-            <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
-              <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Застрахованный для своего ребенка</div>
-              <div data-layer="Button container" className="ButtonContainer" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-                <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
-                  <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
+        <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+          <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
+            <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
+              <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Застрахованный - Свой ребенок</div>
+              <div data-layer="Button container" className="ButtonContainer" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
+                <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{ width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer' }}>
+                  <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сохранить</div>
                 </div>
               </div>
             </div>
           </div>
-          <div data-layer="Filds list" className="FildsList" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
+          <div data-layer="Filds list" className="FildsList" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
             {/* Секция данных родителя - всегда видна */}
-            <div data-layer="MessageContainer" className="Messagecontainer" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-              <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Данные родителя или опекуна ребенка</div>
-              <div data-layer="Open button" className="OpenButton" onClick={() => setParentSectionCollapsed(!parentSectionCollapsed)} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer'}}>
-                <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute', transform: parentSectionCollapsed ? 'rotate(180deg)' : 'none'}}>
+            <div data-layer="MessageContainer" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+              <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Данные родителя или опекуна ребенка</div>
+              <div data-layer="Open button" className="OpenButton" onClick={() => setParentSectionCollapsed(!parentSectionCollapsed)} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer' }}>
+                <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{ left: 31, top: 32, position: 'absolute', transform: parentSectionCollapsed ? 'rotate(180deg)' : 'none' }}>
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
+                    <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2" />
                   </svg>
                 </div>
               </div>
@@ -628,22 +784,22 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
             {!parentSectionCollapsed && (
               <>
                 {!policyholderData ? (
-                  <div data-layer="Alert" className="Alert" style={{width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-                    <div data-layer="Info container" className="InfoContainer" style={{width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden'}}>
-                      <div data-svg-wrapper data-layer="Info" className="Info" style={{left: 31, top: 32, position: 'absolute'}}>
+                  <div data-layer="Alert" className="Alert" style={{ width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                    <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
+                      <div data-svg-wrapper data-layer="Info" className="Info" style={{ left: 31, top: 32, position: 'absolute' }}>
                         <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <g clipPath="url(#clip0_785_24837)">
-                        <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black"/>
-                        </g>
-                        <defs>
-                        <clipPath id="clip0_785_24837">
-                        <rect width="22" height="22" fill="white"/>
-                        </clipPath>
-                        </defs>
+                          <g clipPath="url(#clip0_785_24837)">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black" />
+                          </g>
+                          <defs>
+                            <clipPath id="clip0_785_24837">
+                              <rect width="22" height="22" fill="white" />
+                            </clipPath>
+                          </defs>
                         </svg>
                       </div>
                     </div>
-                    <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Заполните страхователя сначала</div>
+                    <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Заполните страхователя сначала</div>
                   </div>
                 ) : (
                   <>
@@ -672,21 +828,27 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
             )}
 
             {/* Секция данных ребенка */}
-            <div data-layer="MessageContainer" className="Messagecontainer" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-              <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Данные ребенка</div>
-              <div data-layer="Open button" className="OpenButton" onClick={() => setChildSectionCollapsed(!childSectionCollapsed)} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer'}}>
-                <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute', transform: childSectionCollapsed ? 'rotate(180deg)' : 'none'}}>
+            <div data-layer="MessageContainer" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+              <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Данные ребенка</div>
+              <div data-layer="Open button" className="OpenButton" onClick={() => setChildSectionCollapsed(!childSectionCollapsed)} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer' }}>
+                <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{ left: 31, top: 32, position: 'absolute', transform: childSectionCollapsed ? 'rotate(180deg)' : 'none' }}>
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
+                    <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2" />
                   </svg>
                 </div>
               </div>
             </div>
             {!childSectionCollapsed && (
               <>
-                {renderDictionaryButton('selectChild', 'Выбрать ребенка', getSelectedChildDisplay(), handleSelectChild, !!getSelectedChildDisplay())}
-                {renderToggleButton('Ручной ввод данных', manualChildInput, handleToggleManualChildInput)}
-                {(manualChildInput || selectedChild) && (
+                {/* Показываем "Выбрать ребенка" только если данных ребенка еще нет */}
+                {!(childData.iin || childData.name || childData.surname) && (
+                  <>
+                    {renderDictionaryButton('selectChild', 'Выбрать ребенка', getSelectedChildDisplay(), handleSelectChild, !!getSelectedChildDisplay())}
+                    {renderToggleButton('Ручной ввод данных', manualChildInput, handleToggleManualChildInput)}
+                  </>
+                )}
+                {/* Показываем поля ребенка, если есть данные ИЛИ выбран ребенок ИЛИ включен ручной ввод */}
+                {(childData.iin || childData.name || childData.surname || manualChildInput || selectedChild) && (
                   <>
                     {renderInputField('iin', 'ИИН', childData, activeChildField, handleChildFieldChange, handleChildFieldClick, handleChildFieldBlur)}
                     {renderInputField('surname', 'Фамилия', childData, activeChildField, handleChildFieldChange, handleChildFieldClick, handleChildFieldBlur)}
@@ -725,51 +887,51 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
 
   // Основной вид - выбор ребенка
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-      <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-        <div data-layer="Back button" className="BackButton" onClick={onBack} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-          <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 32, top: 32, position: 'absolute'}}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
+          <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2"/>
+              <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2" />
             </svg>
           </div>
         </div>
       </div>
-      <div data-layer="Insured data" className="InsuredData" style={{width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-        <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex'}}>
-          <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
-            <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Застрахованный для своего ребенка</div>
-            <div data-layer="Button container" className="ButtonContainer" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-              <div data-layer="Application section transition buttons" className="ApplicationSectionTransitionButtons" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-                <div data-layer="Next Button" className="NextButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderRight: '1px #F8E8E8 solid'}}>
-                  <div data-svg-wrapper data-layer="Chewron down" className="ChewronDown" style={{left: 31, top: 32, position: 'absolute'}}>
+      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
+          <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
+            <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Застрахованный - Свой ребенок</div>
+            <div data-layer="Button container" className="ButtonContainer" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
+              <div data-layer="Application section transition buttons" className="ApplicationSectionTransitionButtons" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
+                <div data-layer="Next Button" className="NextButton" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderRight: '1px #F8E8E8 solid' }}>
+                  <div data-svg-wrapper data-layer="Chewron down" className="ChewronDown" style={{ left: 31, top: 32, position: 'absolute' }}>
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M18.5 7.5L11 15.5L3.5 7.5" stroke="black" strokeWidth="2"/>
+                      <path d="M18.5 7.5L11 15.5L3.5 7.5" stroke="black" strokeWidth="2" />
                     </svg>
                   </div>
                 </div>
-                <div data-layer="Previous Button" className="PreviousButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid'}}>
-                  <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute'}}>
+                <div data-layer="Previous Button" className="PreviousButton" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid' }}>
+                  <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{ left: 31, top: 32, position: 'absolute' }}>
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
+                      <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2" />
                     </svg>
                   </div>
                 </div>
               </div>
-              <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
-                <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
+              <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{ width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer' }}>
+                <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сохранить</div>
               </div>
             </div>
           </div>
         </div>
-        <div data-layer="Filds list" className="FildsList" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
+        <div data-layer="Filds list" className="FildsList" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
           {/* Секция данных родителя */}
-          <div data-layer="MessageContainer" className="Messagecontainer" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-            <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Данные родителя или опекуна ребенка</div>
-            <div data-layer="Open button" className="OpenButton" onClick={() => setParentSectionCollapsed(!parentSectionCollapsed)} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer'}}>
-              <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{left: 31, top: 32, position: 'absolute', transform: parentSectionCollapsed ? 'rotate(180deg)' : 'none'}}>
+          <div data-layer="MessageContainer" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Данные родителя или опекуна ребенка</div>
+            <div data-layer="Open button" className="OpenButton" onClick={() => setParentSectionCollapsed(!parentSectionCollapsed)} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer' }}>
+              <div data-svg-wrapper data-layer="Chewron up" className="ChewronUp" style={{ left: 31, top: 32, position: 'absolute', transform: parentSectionCollapsed ? 'rotate(180deg)' : 'none' }}>
                 <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2"/>
+                  <path d="M3.5 15.5L11 7.5L18.5 15.5" stroke="black" strokeWidth="2" />
                 </svg>
               </div>
             </div>
@@ -777,22 +939,22 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
           {!parentSectionCollapsed && (
             <>
               {!policyholderData ? (
-                <div data-layer="Alert" className="Alert" style={{width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-                  <div data-layer="Info container" className="InfoContainer" style={{width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden'}}>
-                    <div data-svg-wrapper data-layer="Info" className="Info" style={{left: 31, top: 32, position: 'absolute'}}>
+                <div data-layer="Alert" className="Alert" style={{ width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                  <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
+                    <div data-svg-wrapper data-layer="Info" className="Info" style={{ left: 31, top: 32, position: 'absolute' }}>
                       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <g clipPath="url(#clip0_785_24837)">
-                      <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black"/>
-                      </g>
-                      <defs>
-                      <clipPath id="clip0_785_24837">
-                      <rect width="22" height="22" fill="white"/>
-                      </clipPath>
-                      </defs>
+                        <g clipPath="url(#clip0_785_24837)">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black" />
+                        </g>
+                        <defs>
+                          <clipPath id="clip0_785_24837">
+                            <rect width="22" height="22" fill="white" />
+                          </clipPath>
+                        </defs>
                       </svg>
                     </div>
                   </div>
-                  <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Заполните страхователя сначала</div>
+                  <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Заполните страхователя сначала</div>
                 </div>
               ) : (
                 <>
@@ -822,17 +984,17 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
           )}
 
           {/* Секция данных ребенка */}
-          <div data-layer="MessageContainer" className="Messagecontainer" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-            <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Данные ребенка</div>
+          <div data-layer="MessageContainer" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Данные ребенка</div>
           </div>
-          <div data-layer="InputContainerDictionaryButton" data-state="not_pressed" className="Inputcontainerdictionarybutton" onClick={handleSelectChild} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex', cursor: 'pointer'}}>
-            <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-              <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Выбрать ребенка</div>
+          <div data-layer="InputContainerDictionaryButton" data-state="not_pressed" className="Inputcontainerdictionarybutton" onClick={handleSelectChild} style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex', cursor: 'pointer' }}>
+            <div data-layer="Text container" className="TextContainer" style={{ flex: '1 1 0', paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex' }}>
+              <div data-layer="Label" className="Label" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Выбрать ребенка</div>
             </div>
-            <div data-layer="Open button" className="OpenButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-              <div data-svg-wrapper data-layer="Chewron right" className="ChewronRight" style={{left: 31, top: 32, position: 'absolute'}}>
+            <div data-layer="Open button" className="OpenButton" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
+              <div data-svg-wrapper data-layer="Chewron right" className="ChewronRight" style={{ left: 31, top: 32, position: 'absolute' }}>
                 <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M7 4L15 11.5L7 19" stroke="black" strokeWidth="2"/>
+                  <path d="M7 4L15 11.5L7 19" stroke="black" strokeWidth="2" />
                 </svg>
               </div>
             </div>

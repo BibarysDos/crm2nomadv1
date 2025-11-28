@@ -39,16 +39,12 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
 
   // Загружаем заявления при изменении выбранной папки
   useEffect(() => {
-    console.log('useEffect selectedFolder изменился:', selectedFolder);
     if (selectedFolder) {
-      console.log('Загружаем заявления для папки:', selectedFolder.code);
       // Очищаем старые данные перед загрузкой новых
       setApplications([]);
       setFilteredApplications([]);
       // Принудительно обновляем данные при переключении папок
       loadApplications(true);
-    } else {
-      console.log('selectedFolder еще не установлен');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolder]);
@@ -108,7 +104,6 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
         const cacheAge = Date.now() - parseInt(cacheTimestamp, 10);
         const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
         if (cacheAge < CACHE_DURATION) {
-          console.log('Используем кэшированные папки');
           const foldersData = JSON.parse(cachedFolders);
           setFolders(foldersData);
           const statementFolder = foldersData.find(f => f.code === 'Statement') || foldersData[0];
@@ -123,14 +118,9 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
     setLoadingFolders(true);
     try {
       const token = getAccessToken();
-      console.log('loadFolders: Токен получен:', token ? 'Да (первые 20 символов: ' + token.substring(0, 20) + '...)' : 'НЕТ!');
-      
       if (!token) {
-        console.error('Токен авторизации не найден в loadFolders');
         throw new Error('Токен авторизации не найден');
       }
-
-      console.log('Загружаем папки с токеном...');
       const authHeader = `Bearer ${token}`;
       
       const response = await fetch('https://crm-arm.onrender.com/api/Statement/Folders', {
@@ -141,8 +131,6 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
           'Content-Type': 'application/json',
         },
       });
-      
-      console.log('Ответ от сервера (статус):', response.status);
 
       if (!response.ok) {
         throw new Error(`Ошибка загрузки папок: ${response.status}`);
@@ -161,15 +149,12 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
         // По умолчанию выбираем "Statement" (Заявление) - все заявки в системе, если есть, иначе первую папку
         const statementFolder = foldersData.find(f => f.code === 'Statement');
         if (statementFolder) {
-          console.log('Выбрана папка Statement:', statementFolder);
           setSelectedFolder(statementFolder);
         } else if (foldersData.length > 0) {
-          console.log('Выбрана первая папка:', foldersData[0]);
           setSelectedFolder(foldersData[0]);
         }
       }
     } catch (error) {
-      console.error('Ошибка загрузки папок:', error);
       // В случае ошибки устанавливаем дефолтную папку
       const defaultFolder = { code: 'Statement', name: 'Заявление' };
       setFolders([defaultFolder]);
@@ -209,7 +194,6 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
 
   // Обработчик кнопки обновления - принудительно обновляет данные из API
   const handleRefresh = async () => {
-    console.log('Обновление списка заявлений...');
     await loadApplications(true);
   };
 
@@ -217,10 +201,7 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
     setLoadingApplications(true);
     try {
       const token = getAccessToken();
-      console.log('loadApplications: Токен получен:', token ? 'Да (первые 20 символов: ' + token.substring(0, 20) + '...)' : 'НЕТ!');
-      
       if (!token) {
-        console.log('Токен не найден, используем данные из localStorage');
         // Если нет токена, используем данные из localStorage
         const apps = getAllApplications();
         setApplications(apps);
@@ -237,13 +218,9 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
       }
 
       const folderType = selectedFolder?.code || 'Statement';
-      console.log('Загружаем заявления для папки:', folderType);
 
       // Загружаем заявления из API
       const authHeader = `Bearer ${token}`;
-      console.log('Заголовок Authorization для заявлений (первые 30 символов):', authHeader.substring(0, 30) + '...');
-      console.log('Принудительное обновление:', forceRefresh ? 'Да' : 'Нет');
-      
       // Всегда используем no-cache и добавляем timestamp для предотвращения кэширования
       const timestamp = Date.now();
       const response = await fetch(`https://crm-arm.onrender.com/api/Statement/List?_t=${timestamp}`, {
@@ -267,8 +244,6 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
           folderType: folderType
         }),
       });
-      
-      console.log('Ответ от сервера для заявлений (статус):', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -277,11 +252,8 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
       }
 
       const data = await response.json();
-      console.log('Получены данные от API:', data);
       
       if (data && data.statements && Array.isArray(data.statements)) {
-        console.log('Найдено заявлений:', data.statements.length);
-        
         // Преобразуем формат данных из API в формат, который ожидает компонент
         // ВАЖНО: Список заявок всегда берется из API, данные из localStorage - только дополнение
         const transformedApps = data.statements.map(statement => {

@@ -6,9 +6,9 @@ import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderToggleButton } from './InsuredFormFields';
-import { mapInsuredToContragent } from '../Policyholder';
-import { updateContragent, getProcessInstanceDetails } from '../../../services/processService';
-import { getAccessToken, loadApplicationMetadata } from '../../../services/storageService';
+import { mapInsuredToContragent } from '../../services/contragentService';
+import { updateContragent } from '../../../services/processService';
+import { getAccessToken } from '../../../services/storageService';
 
 const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, taskId, savedData, onOpenTypes }) => {
   // Основной currentView для переключения между этапами
@@ -26,44 +26,18 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
   // Активное поле
   const [activeField, setActiveField] = useState(null);
 
-  // Логирование policyholderData для отладки
-  useEffect(() => {
-    console.log('📋 [POLICYHOLDER INSURED] policyholderData получен:', policyholderData);
-    if (policyholderData) {
-      console.log('📋 [POLICYHOLDER INSURED] Поля:', {
-        iin: policyholderData.iin,
-        telephone: policyholderData.telephone,
-        surname: policyholderData.surname,
-        name: policyholderData.name,
-        patronymic: policyholderData.patronymic,
-        birthDate: policyholderData.birthDate,
-        gender: policyholderData.gender,
-        economSecId: policyholderData.economSecId,
-        countryId: policyholderData.countryId,
-        district_nameru: policyholderData.district_nameru,
-        settlementName: policyholderData.settlementName,
-        street: policyholderData.street,
-        houseNumber: policyholderData.houseNumber,
-        apartmentNumber: policyholderData.apartmentNumber,
-        vidDocId: policyholderData.vidDocId,
-        docNumber: policyholderData.docNumber,
-        issuedBy: policyholderData.issuedBy,
-        issueDate: policyholderData.issueDate,
-        expiryDate: policyholderData.expiryDate
-      });
-    }
-  }, [policyholderData]);
+  // Логирование policyholderData для отладки убрано по требованию
 
   // Восстановление сохраненных данных при монтировании
   useEffect(() => {
     if (savedData && savedData.fullData) {
       const restored = savedData.fullData;
-      
+
       // Восстанавливаем состояния тогглов
       if (restored.toggleStates) {
         setToggleStates(restored.toggleStates);
       }
-      
+
       // Восстанавливаем view
       if (restored.currentView) {
         setCurrentView(restored.currentView);
@@ -93,7 +67,6 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
     if (typeof value === 'object') {
       // Проверяем различные варианты названий полей (nameRu - camelCase, name_ru - snake_case)
       const displayValue = value.nameRu || value.name_ru || value.name || value.title || value.label || '';
-      console.log('🔍 [DICTIONARY DISPLAY] Значение справочника:', value, '→ Отображение:', displayValue);
       return displayValue;
     }
     // Если это строка, возвращаем как есть
@@ -152,50 +125,16 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
       try {
         const token = getAccessToken();
         if (token) {
-          // Получаем taskId
-          let actualTaskId = taskId;
-          if (!actualTaskId || actualTaskId.trim() === '' || actualTaskId === applicationId) {
-            const metadata = loadApplicationMetadata(applicationId);
-            if (metadata?.taskId && metadata.taskId !== applicationId) {
-              actualTaskId = metadata.taskId;
-            } else {
-              try {
-                const processInstance = await getProcessInstanceDetails(applicationId, token);
-                if (processInstance?.taskId && processInstance.taskId !== applicationId) {
-                  actualTaskId = processInstance.taskId;
-                } else if (processInstance?.tasks && Array.isArray(processInstance.tasks) && processInstance.tasks.length > 0) {
-                  const firstTask = processInstance.tasks[0];
-                  if (firstTask?.id && firstTask.id !== applicationId) {
-                    actualTaskId = firstTask.id;
-                  }
-                }
-              } catch (error) {
-                console.warn('⚠️ [INSURED] Не удалось получить processInstance:', error.message);
-              }
-            }
-          }
-          
-          let accessIdForAPI = actualTaskId && actualTaskId !== applicationId ? actualTaskId : applicationId;
-          
-          if (accessIdForAPI && accessIdForAPI.trim() !== '') {
-            try {
-              // Преобразуем данные в формат API
-              const contragentData = mapInsuredToContragent(policyholderData, 'policyholder');
-              
-              console.log('📤 [INSURED] Отправка данных застрахованного в API с accessId:', accessIdForAPI);
-              console.log('📤 [INSURED] Данные застрахованного:', JSON.stringify(contragentData, null, 2));
-              
-              // Вызываем PUT для сохранения/обновления контрагента
-              await updateContragent(contragentData, accessIdForAPI.trim(), token);
-              
-              console.log('✅ [INSURED] Данные застрахованного сохранены в API');
-            } catch (error) {
-              console.error('Ошибка сохранения застрахованного в API:', error);
-            }
+          const accessIdForAPI = applicationId;
+
+          try {
+            // Преобразуем данные страхователя в формат застрахованного с типом "страхователь является застрахованным"
+            const contragentData = mapInsuredToContragent(policyholderData, 'policyholder');
+            await updateContragent(contragentData, String(accessIdForAPI).trim(), token);
+          } catch (error) {
           }
         }
       } catch (error) {
-        console.error('Ошибка сохранения застрахованного в API:', error);
       }
     }
 
@@ -206,7 +145,7 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
         toggleStates,
         currentView: 'main'
       };
-      
+
       // Преобразуем policyholderData для отображения в Application.js
       const displayData = {
         lastName: policyholderData?.surname || '',
@@ -216,7 +155,7 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
         // Сохраняем полные данные для восстановления
         fullData: dataToSave
       };
-      
+
       onSave(displayData);
     }
     // Возвращаемся в Application.js
@@ -247,11 +186,11 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
 
   // Рендеринг меню
   const renderMenu = () => (
-    <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-      <div data-layer="Back button" className="BackButton" onClick={onBack} style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer'}}>
-        <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 32, top: 32, position: 'absolute'}}>
+    <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
+        <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2"/>
+            <path d="M15 18L7 10.5L15 3" stroke="black" strokeWidth="2" />
           </svg>
         </div>
       </div>
@@ -259,12 +198,12 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
   );
 
   const renderSubHeader = (title) => (
-    <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex'}}>
-      <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
-        <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{title}</div>
-        <div data-layer="Button container" className="ButtonContainer" style={{justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-          <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
-            <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
+    <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
+      <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
+        <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>{title}</div>
+        <div data-layer="Button container" className="ButtonContainer" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
+          <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{ width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer' }}>
+            <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сохранить</div>
           </div>
         </div>
       </div>
@@ -273,28 +212,28 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
 
   // Основной вид
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
       {renderMenu()}
-      <div data-layer="Insured data" className="InsuredData" style={{width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-        {renderSubHeader('Застрахованный')}
-        <div data-layer="Filds list" className="FildsList" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
+      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        {renderSubHeader('Застрахованный - Страхователь')}
+        <div data-layer="Filds list" className="FildsList" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
           {!policyholderData ? (
-            <div data-layer="Alert" className="Alert" style={{width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-              <div data-layer="Info container" className="InfoContainer" style={{width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden'}}>
-                <div data-svg-wrapper data-layer="Info" className="Info" style={{left: 31, top: 32, position: 'absolute'}}>
+            <div data-layer="Alert" className="Alert" style={{ width: 1427, height: 85, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+              <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
+                <div data-svg-wrapper data-layer="Info" className="Info" style={{ left: 31, top: 32, position: 'absolute' }}>
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <g clipPath="url(#clip0_785_24837)">
-                  <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black"/>
-                  </g>
-                  <defs>
-                  <clipPath id="clip0_785_24837">
-                  <rect width="22" height="22" fill="white"/>
-                  </clipPath>
-                  </defs>
+                    <g clipPath="url(#clip0_785_24837)">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M0.916016 11.0003C0.916016 5.43131 5.43034 0.916992 10.9993 0.916992C16.5684 0.916992 21.0827 5.43131 21.0827 11.0003C21.0827 16.5693 16.5684 21.0837 10.9993 21.0837C5.43034 21.0837 0.916016 16.5693 0.916016 11.0003ZM10.9993 2.75033C6.44286 2.75033 2.74935 6.44384 2.74935 11.0003C2.74935 15.5568 6.44286 19.2503 10.9993 19.2503C15.5558 19.2503 19.2494 15.5568 19.2494 11.0003C19.2494 6.44384 15.5558 2.75033 10.9993 2.75033ZM10.0735 7.33366C10.0735 6.8274 10.4839 6.41699 10.9902 6.41699H10.9993C11.5056 6.41699 11.916 6.8274 11.916 7.33366C11.916 7.83992 11.5056 8.25033 10.9993 8.25033H10.9902C10.4839 8.25033 10.0735 7.83992 10.0735 7.33366ZM10.9993 10.0837C11.5056 10.0837 11.916 10.4941 11.916 11.0003V14.667C11.916 15.1733 11.5056 15.5837 10.9993 15.5837C10.4931 15.5837 10.0827 15.1733 10.0827 14.667V11.0003C10.0827 10.4941 10.4931 10.0837 10.9993 10.0837Z" fill="black" />
+                    </g>
+                    <defs>
+                      <clipPath id="clip0_785_24837">
+                        <rect width="22" height="22" fill="white" />
+                      </clipPath>
+                    </defs>
                   </svg>
                 </div>
               </div>
-              <div data-layer="Label" className="Label" style={{flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Заполните страхователя сначала</div>
+              <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Заполните страхователя сначала</div>
             </div>
           ) : (
             <>
