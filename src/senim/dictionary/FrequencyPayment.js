@@ -1,10 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getProgramPaymentFrequencies } from '../../services/processService';
+import { getAccessToken } from '../../services/storageService';
 
-const FrequencyPayment = ({ onBack, onSelect }) => {
-  const [selectedValue, setSelectedValue] = useState(null);
+const FrequencyPayment = ({ onBack, onSelect, programId, initialValue }) => {
+  const [selectedValue, setSelectedValue] = useState(initialValue || null);
+  const [frequencies, setFrequencies] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const handleSelect = (value) => {
-    setSelectedValue(value);
+  useEffect(() => {
+    const loadFrequencies = async () => {
+      if (!programId) {
+        setError('Программа страхования не выбрана');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        const token = getAccessToken();
+        const frequenciesData = await getProgramPaymentFrequencies(programId, token);
+        setFrequencies(frequenciesData || []);
+      } catch (err) {
+        setError(err.message || 'Не удалось загрузить частоты оплаты');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadFrequencies();
+  }, [programId]);
+
+  // Обновляем selectedValue при изменении initialValue
+  useEffect(() => {
+    if (initialValue) {
+      setSelectedValue(initialValue);
+    }
+  }, [initialValue]);
+
+  const handleSelect = (frequency) => {
+    setSelectedValue(frequency);
   };
 
   const handleSave = () => {
@@ -46,70 +82,53 @@ const FrequencyPayment = ({ onBack, onSelect }) => {
       </div>
     </div>
     <div data-layer="Fields List" className="FieldsList" style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === 'Единовременно' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('Единовременно')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Единовременно</div>
+      {isLoading ? (
+        <div data-layer="Loading state" className="LoadingState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Загрузка частот оплаты...</div>
         </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === 'Единовременно' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
+      ) : error ? (
+        <div data-layer="Error state" className="ErrorState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#D32F2F', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{error}</div>
         </div>
-      </div>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === 'Ежемесячно' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('Ежемесячно')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Ежемесячно</div>
+      ) : frequencies.length === 0 ? (
+        <div data-layer="Empty state" className="EmptyState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Частоты оплаты недоступны</div>
         </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === 'Ежемесячно' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === 'Ежеквартально' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('Ежеквартально')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Ежеквартально</div>
-        </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === 'Ежеквартально' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === 'Раз в полгода' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('Раз в полгода')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Раз в полгода</div>
-        </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === 'Раз в полгода' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
-        </div>
-      </div>
+      ) : (
+        frequencies.map((frequency) => {
+          const isSelected = selectedValue && (
+            (typeof selectedValue === 'object' && (
+              selectedValue.id === frequency.id ||
+              selectedValue.paymentFrequencyId === frequency.paymentFrequencyId ||
+              selectedValue.paymentFrequencyCode === frequency.paymentFrequencyCode
+            )) ||
+            (typeof selectedValue === 'string' && (selectedValue === frequency.paymentFrequencyNameRu || selectedValue === frequency.paymentFrequencyCode))
+          );
+          return (
+            <div
+              key={frequency.id}
+              data-layer="InputContainerRadioButton"
+              data-state={isSelected ? 'pressed' : 'not_pressed'}
+              className="Inputcontainerradiobutton"
+              onClick={() => handleSelect(frequency)}
+              style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}
+            >
+              <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
+                <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>
+                  {frequency.paymentFrequencyNameRu || frequency.paymentFrequencyNameKz || frequency.paymentFrequencyCode}
+                </div>
+              </div>
+              <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
+                <div data-svg-wrapper data-layer={isSelected ? "Ellipse-on" : "Ellipse-off"} className={isSelected ? "EllipseOn" : "EllipseOff"} style={{left: 35, top: 36, position: 'absolute'}}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="7" cy="7" r="6.5" fill={isSelected ? "black" : "none"} stroke="black"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   </div>
     </div>

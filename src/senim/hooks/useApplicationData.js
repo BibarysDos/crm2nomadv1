@@ -50,6 +50,7 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
   const [userRole, setUserRole] = useState(null);
   const processStateRequestedRef = useRef(false);
   const [isLoadingApplicationData, setIsLoadingApplicationData] = useState(true);
+  const [isLoadingInsured, setIsLoadingInsured] = useState(false);
 
   const normalizeTermsData = useCallback((data) => {
     if (!data) return null;
@@ -281,121 +282,84 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
             setApplicationNumber(details.regNumber);
           }
 
-          // ВСЕГДА заполняем карточки данными из ProcessInstance
+          // Заполняем карточки данными из ProcessInstance (без вызова getContragent)
           if (details.contragents && Array.isArray(details.contragents)) {
             const clientContragent = details.contragents.find((c) => c.contragentRoleCode === 'client');
             if (clientContragent) {
-              // Загружаем полные данные контрагента для заполнения всех полей
-              try {
-                const fullClient = await getContragent(clientContragent.id, applicationId, token);
-                const mappedData = mapContragentToPolicyholderForApplication(fullClient);
-                if (mappedData && (mappedData.iin || mappedData.name || mappedData.surname)) {
-                  setPolicyholderData(mappedData);
-                  // Сохраняем в глобальное хранилище
-                  updateGlobalApplicationSection('Policyholder', mappedData, applicationId);
-                }
-              } catch (error) {
-                console.warn('[APPLICATION] Не удалось загрузить полные данные страхователя:', error);
-                // Fallback: используем данные из ProcessInstance
-                const mappedData = mapContragentToPolicyholderForApplication(clientContragent);
-                if (mappedData && (mappedData.iin || mappedData.name || mappedData.surname)) {
-                  setPolicyholderData(mappedData);
-                  updateGlobalApplicationSection('Policyholder', mappedData, applicationId);
-                }
+              // Используем данные из ProcessInstance напрямую для карточки
+              const mappedData = mapContragentToPolicyholderForApplication(clientContragent);
+              if (mappedData && (mappedData.iin || mappedData.name || mappedData.surname)) {
+                setPolicyholderData(mappedData);
+                // Сохраняем в глобальное хранилище
+                updateGlobalApplicationSection('Policyholder', mappedData, applicationId);
               }
             }
 
             const insuredContragent = details.contragents.find((c) => c.contragentRoleCode === 'insured');
             if (insuredContragent) {
-              // Загружаем полные данные контрагента для заполнения всех полей
-              try {
-                const fullInsured = await getContragent(insuredContragent.id, applicationId, token);
-                const mappedInsuredData = mapContragentToInsuredForApplication(fullInsured);
-                if (mappedInsuredData) {
-                  // Определяем тип застрахованного из полных данных
-                  const insuredTypeCode = String(
-                    fullInsured?.insuredDetails?.insuredTypeCode ||
-                    fullInsured?.insuredDetails?.InsuredTypeCode ||
-                    insuredContragent?.insuredDetails?.insuredTypeCode ||
-                    insuredContragent?.insuredDetails?.InsuredTypeCode ||
-                    ''
-                  ).trim();
+              // Используем данные из ProcessInstance напрямую для карточки
+              const mappedInsuredData = mapContragentToInsuredForApplication(insuredContragent);
+              if (mappedInsuredData) {
+                // Определяем тип застрахованного из ProcessInstance
+                const insuredTypeCode = String(
+                  insuredContragent?.insuredDetails?.insuredTypeCode ||
+                  insuredContragent?.insuredDetails?.InsuredTypeCode ||
+                  ''
+                ).trim();
 
-                  let insuredType = null;
-                  if (insuredTypeCode === '1') insuredType = 'own-child';
-                  else if (insuredTypeCode === '2') insuredType = 'other-child';
-                  else if (insuredTypeCode === '3') insuredType = 'policyholder';
-                  else if (insuredTypeCode === '4') insuredType = 'other-person';
+                let insuredType = null;
+                if (insuredTypeCode === '1') insuredType = 'own-child';
+                else if (insuredTypeCode === '2') insuredType = 'other-child';
+                else if (insuredTypeCode === '3') insuredType = 'policyholder';
+                else if (insuredTypeCode === '4') insuredType = 'other-person';
 
-                  // Загружаем legalRepresentative, если он есть (для own-child и other-child)
-                  let legalRep = null;
-                  if (fullInsured?.legalRepresentative?.processLegalRepId) {
-                    try {
-                      const legalRepId = fullInsured.legalRepresentative.processLegalRepId;
-                      legalRep = await getContragent(legalRepId, applicationId, token);
-                    } catch (e) {
-                      console.warn('[APPLICATION] Не удалось загрузить legalRepresentative:', e);
-                    }
+                // Используем legalRep из ProcessInstance, если он есть
+                const legalRepContragent = details.contragents.find((c) => c.contragentRoleCode === 'legalrep');
+                const legalRep = legalRepContragent || null;
+
+                // Сохраняем тип в fullData для автоматического открытия правильной страницы
+                const displayData = {
+                  ...mappedInsuredData,
+                  fullData: {
+                    insuredType,
+                    fullInsured: insuredContragent,
+                    legalRep,
+                    processDetails: details
                   }
+                };
 
-                  // Сохраняем тип в fullData для автоматического открытия правильной страницы
-                  const displayData = {
-                    ...mappedInsuredData,
-                    fullData: {
-                      insuredType,
-                      fullInsured,
-                      legalRep,
-                      processDetails: details
-                    }
-                  };
-
-                  setInsuredData(displayData);
-                  // Сохраняем в локальное хранилище
-                  saveInsuredData(displayData, applicationId);
-                }
-              } catch (error) {
-                console.warn('[APPLICATION] Не удалось загрузить полные данные застрахованного:', error);
-                // Fallback: используем данные из ProcessInstance без полных деталей
-                const mappedInsuredData = mapContragentToInsuredForApplication(insuredContragent);
-                if (mappedInsuredData) {
-                  const insuredTypeCode = String(
-                    insuredContragent?.insuredDetails?.insuredTypeCode ||
-                    insuredContragent?.insuredDetails?.InsuredTypeCode ||
-                    ''
-                  ).trim();
-
-                  let insuredType = null;
-                  if (insuredTypeCode === '1') insuredType = 'own-child';
-                  else if (insuredTypeCode === '2') insuredType = 'other-child';
-                  else if (insuredTypeCode === '3') insuredType = 'policyholder';
-                  else if (insuredTypeCode === '4') insuredType = 'other-person';
-
-                  // Пытаемся загрузить legalRepresentative из ProcessInstance
-                  let legalRep = null;
-                  if (insuredContragent?.legalRepresentative?.processLegalRepId) {
-                    try {
-                      const legalRepId = insuredContragent.legalRepresentative.processLegalRepId;
-                      legalRep = await getContragent(legalRepId, applicationId, token);
-                    } catch (e) {
-                      console.warn('[APPLICATION] Не удалось загрузить legalRepresentative (fallback):', e);
-                    }
-                  }
-
-                  const displayData = {
-                    ...mappedInsuredData,
-                    fullData: {
-                      insuredType,
-                      fullInsured: insuredContragent,
-                      legalRep,
-                      processDetails: details
-                    }
-                  };
-
-                  setInsuredData(displayData);
-                  saveInsuredData(displayData, applicationId);
-                }
+                setInsuredData(displayData);
+                // Сохраняем в локальное хранилище
+                saveInsuredData(displayData, applicationId);
               }
             }
+          }
+
+          // Заполняем карточку Условия данными из ProcessInstance.contract
+          if (details.contract) {
+            const contract = details.contract;
+            // Формируем данные для карточки Условия из contract
+            // programName содержит название программы (например, "«CEHIM» Бизнес 250")
+            const termsDataForCard = {
+              dictionaryValues: {
+                insuranceProduct: contract.programName || contract.programCode || '',
+                frequencyPayment: '' // В ProcessInstance нет информации о частоте оплаты
+              },
+              toggleStates: {
+                flightAndAccommodation: false
+              },
+              dateValues: {
+                startDate: '',
+                endDate: ''
+              },
+              // Сохраняем amount для отображения в карточке
+              amount: contract.amount || null,
+              currencyCode: contract.currencyCode || 'usd',
+              currencyName: contract.currencyName || ''
+            };
+            const normalizedTerms = normalizeTermsData(termsDataForCard);
+            setTermsData(normalizedTerms);
+            updateGlobalApplicationSection('Terms', normalizedTerms, applicationId);
           }
 
           const currentMetadata = loadApplicationMetadata(applicationId) || {};
@@ -445,7 +409,6 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
           historyPayload
         });
       } catch (error) {
-        console.error('[APPLICATION] Ошибка загрузки ProcessInstance:', error);
         // swallow process load errors, UI будет отображать пустые данные
       } finally {
         if (!isCancelled) {
@@ -567,40 +530,13 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
   };
 
   // Вспомогательная функция для сохранения секций Terms/Questionary в API
+  // УДАЛЕНО: больше не используется, так как Terms теперь использует updateContract напрямую
+  // Terms сохраняет контракт через правильный endpoint: https://crm-statement.onrender.com/api/Contract?accessId=...
   const saveApplicationSectionToAPI = async (section, data) => {
-    if (!applicationId) return;
-    try {
-      const token = getAccessToken();
-      if (!token) {
-        return;
-      }
-
-      const globalData = loadGlobalApplicationData(applicationId) || {};
-      globalData[section] = data;
-
-      const response = await fetch(
-        `https://crm-arm.onrender.com/api/Statement/${applicationId}`,
-        {
-          method: 'PUT',
-          mode: 'cors',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(globalData)
-        }
-      );
-
-      if (response.ok) {
-        console.log('Данные заявки успешно сохранены в API');
-      } else if (response.status === 404) {
-        console.warn('Заявление не найдено в API (404). Данные сохранены локально.');
-      } else {
-        console.error('Ошибка сохранения данных заявки в API:', response.status);
-      }
-    } catch (error) {
-      console.error('Ошибка сохранения данных заявки в API:', error);
-    }
+    // Функция отключена - Terms теперь сохраняет контракт через updateContract
+    // в правильный endpoint: https://crm-statement.onrender.com/api/Contract?accessId=...
+    // Удален лишний запрос на https://crm-arm.onrender.com/api/Statement/${applicationId}
+    return;
   };
 
   const handleTermsSave = (data) => {
@@ -608,7 +544,8 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
     setTermsData(normalizedTerms);
     if (applicationId) {
       updateGlobalApplicationSection('Terms', normalizedTerms, applicationId);
-      saveApplicationSectionToAPI('Terms', normalizedTerms);
+      // УДАЛЕНО: saveApplicationSectionToAPI('Terms', normalizedTerms);
+      // Terms теперь сам сохраняет контракт через updateContract в правильный endpoint
       saveDataByNumber();
     }
   };
@@ -644,7 +581,6 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       await claimTask(currentTaskId);
       await refreshProcessState();
     } catch (error) {
-      console.error('Ошибка при взятии задачи:', error);
       setProcessError(error.message || 'Не удалось взять задачу');
       alert(error.message || 'Не удалось взять задачу');
     } finally {
@@ -662,7 +598,6 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       alert('Задача отправлена на согласование');
       return true;
     } catch (error) {
-      console.error('Ошибка отправки задачи:', error);
       setProcessError(error.message || 'Не удалось отправить задачу');
       alert(error.message || 'Не удалось отправить задачу');
       return false;
@@ -681,7 +616,6 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       setSelectedReasonId(reasonsResponse?.[0]?.id || null);
       setCurrentView('reject');
     } catch (error) {
-      console.error('Ошибка загрузки причин отказа:', error);
       setProcessError(error.message || 'Не удалось загрузить причины отказа');
       alert(error.message || 'Не удалось загрузить причины отказа');
     } finally {
@@ -704,7 +638,6 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       alert('Задача отклонена');
       return true; // Успешное отклонение
     } catch (error) {
-      console.error('Ошибка при отклонении задачи:', error);
       setProcessError(error.message || 'Не удалось отклонить задачу');
       alert(error.message || 'Не удалось отклонить задачу');
       return false;
@@ -755,6 +688,9 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       return;
     }
 
+    setIsLoadingInsured(true);
+    setCurrentView('insured'); // Переключаемся на view сразу, чтобы показать индикатор загрузки
+
     try {
       // Находим контрагентов в ProcessInstance
       const insuredContragent = processDetails.contragents.find(
@@ -767,8 +703,8 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
         (c) => c.contragentRoleCode === 'legalrep'
       );
 
-      // 1) ВСЕГДА тянем полные данные страхователя (client) и заполняем форму страхователя,
-      // чтобы для "своего ребенка" блок родителя был полностью заполнен
+      // При открытии формы застрахованного загружаем полные данные через getContragent
+      // 1) Загружаем полные данные страхователя (client) для заполнения формы
       if (clientContragent) {
         try {
           const fullClient = await getContragent(clientContragent.id, applicationId, token);
@@ -780,56 +716,98 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
             setPolicyholderData(mappedPolicyholder);
           }
         } catch (e) {
-          console.warn('[APPLICATION] Не удалось получить детали client для insured:', e);
-        }
-      }
-
-      // 2) Если есть застрахованный, тянем его детальные данные
-      if (insuredContragent) {
-        const fullInsured = await getContragent(insuredContragent.id, applicationId, token);
-        const mappedInsuredData = mapContragentToInsuredForApplication(fullInsured);
-
-        // Определяем тип застрахованного по InsuredTypeCode / insuredTypeCode
-        const insuredTypeCode = String(
-          fullInsured?.insuredDetails?.insuredTypeCode ||
-            fullInsured?.insuredDetails?.InsuredTypeCode ||
-            ''
-        ).trim();
-
-        let insuredType = null;
-        if (insuredTypeCode === '1') insuredType = 'own-child';
-        else if (insuredTypeCode === '2') insuredType = 'other-child';
-        else if (insuredTypeCode === '3') insuredType = 'policyholder';
-        else if (insuredTypeCode === '4') insuredType = 'other-person';
-
-        const fullData = {
-          insuredType,
-          fullInsured,
-          processDetails
-        };
-
-        // Дополнительно тянем законного представителя, если он есть
-        if (legalRepContragent) {
-          try {
-            const fullLegalRep = await getContragent(legalRepContragent.id, applicationId, token);
-            fullData.legalRep = fullLegalRep;
-          } catch (e) {
-            console.warn('[APPLICATION] Не удалось получить детали legalrep для insured:', e);
+          // Fallback: используем данные из ProcessInstance
+          const mappedPolicyholder = mapContragentToPolicyholderForApplication(clientContragent);
+          if (
+            mappedPolicyholder &&
+            (mappedPolicyholder.iin || mappedPolicyholder.name || mappedPolicyholder.surname)
+          ) {
+            setPolicyholderData(mappedPolicyholder);
           }
         }
+      }
 
-        const displayData = {
-          ...mappedInsuredData,
-          fullData
-        };
+      // 2) Загружаем полные данные застрахованного
+      if (insuredContragent) {
+        try {
+          const fullInsured = await getContragent(insuredContragent.id, applicationId, token);
+          const mappedInsuredData = mapContragentToInsuredForApplication(fullInsured);
 
-        setInsuredData(displayData);
-        saveInsuredData(displayData, applicationId);
+          // Определяем тип застрахованного по InsuredTypeCode / insuredTypeCode
+          const insuredTypeCode = String(
+            fullInsured?.insuredDetails?.insuredTypeCode ||
+              fullInsured?.insuredDetails?.InsuredTypeCode ||
+              insuredContragent?.insuredDetails?.insuredTypeCode ||
+              insuredContragent?.insuredDetails?.InsuredTypeCode ||
+              ''
+          ).trim();
+
+          let insuredType = null;
+          if (insuredTypeCode === '1') insuredType = 'own-child';
+          else if (insuredTypeCode === '2') insuredType = 'other-child';
+          else if (insuredTypeCode === '3') insuredType = 'policyholder';
+          else if (insuredTypeCode === '4') insuredType = 'other-person';
+
+          const fullData = {
+            insuredType,
+            fullInsured,
+            processDetails
+          };
+
+          // Загружаем законного представителя, если он есть
+          if (legalRepContragent) {
+            try {
+              const fullLegalRep = await getContragent(legalRepContragent.id, applicationId, token);
+              fullData.legalRep = fullLegalRep;
+            } catch (e) {
+              // Fallback: используем данные из ProcessInstance
+              fullData.legalRep = legalRepContragent;
+            }
+          }
+
+          const displayData = {
+            ...mappedInsuredData,
+            fullData
+          };
+
+          setInsuredData(displayData);
+          saveInsuredData(displayData, applicationId);
+        } catch (error) {
+          // Fallback: используем данные из ProcessInstance
+          const mappedInsuredData = mapContragentToInsuredForApplication(insuredContragent);
+          if (mappedInsuredData) {
+            const insuredTypeCode = String(
+              insuredContragent?.insuredDetails?.insuredTypeCode ||
+                insuredContragent?.insuredDetails?.InsuredTypeCode ||
+                ''
+            ).trim();
+
+            let insuredType = null;
+            if (insuredTypeCode === '1') insuredType = 'own-child';
+            else if (insuredTypeCode === '2') insuredType = 'other-child';
+            else if (insuredTypeCode === '3') insuredType = 'policyholder';
+            else if (insuredTypeCode === '4') insuredType = 'other-person';
+
+            const fullData = {
+              insuredType,
+              fullInsured: insuredContragent,
+              legalRep: legalRepContragent || null,
+              processDetails
+            };
+
+            const displayData = {
+              ...mappedInsuredData,
+              fullData
+            };
+
+            setInsuredData(displayData);
+            saveInsuredData(displayData, applicationId);
+          }
+        }
       }
     } catch (error) {
-      console.error('[APPLICATION] Ошибка при загрузке детальных данных insured:', error);
     } finally {
-      setCurrentView('insured');
+      setIsLoadingInsured(false);
     }
   };
   const handleOpenTerms = () => setCurrentView('terms');
@@ -855,7 +833,8 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       reasonsLoading,
       processError,
       userRole,
-      isLoadingApplicationData
+      isLoadingApplicationData,
+      isLoadingInsured
     },
     derived: {
       currentTaskId,

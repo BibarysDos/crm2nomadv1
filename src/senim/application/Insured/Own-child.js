@@ -61,19 +61,6 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   const [childSectionCollapsed, setChildSectionCollapsed] = useState(false);
   const [parentSectionCollapsed, setParentSectionCollapsed] = useState(true);
 
-  // Отладочное логирование состояния
-  useEffect(() => {
-    console.log('[OWN_CHILD] Текущее состояние:', {
-      currentView,
-      childSectionCollapsed,
-      hasChildData: !!(childData.iin || childData.name || childData.surname),
-      childData: {
-        iin: childData.iin,
-        name: childData.name,
-        surname: childData.surname
-      }
-    });
-  }, [currentView, childSectionCollapsed, childData.iin, childData.name, childData.surname]);
 
   // Восстановление сохраненных данных при монтировании
   useEffect(() => {
@@ -87,17 +74,10 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
 
       // ПРИОРИТЕТ 1: Если есть данные из getContragent (fullInsured), используем их
       if (savedData.fullData?.fullInsured) {
-        console.log('[OWN_CHILD] Найдены данные из getContragent (fullInsured)');
         const mappedChildData = mapContragentToInsuredForApplication(savedData.fullData.fullInsured);
-        console.log('[OWN_CHILD] Маппированные данные ребенка:', mappedChildData);
         if (mappedChildData && (mappedChildData.iin || mappedChildData.name || mappedChildData.surname)) {
           childDataFromSaved = mappedChildData;
-          console.log('[OWN_CHILD] Данные ребенка успешно извлечены из fullInsured');
-        } else {
-          console.warn('[OWN_CHILD] Данные из fullInsured не содержат необходимых полей (iin, name, surname)');
         }
-      } else {
-        console.log('[OWN_CHILD] Нет данных из getContragent (fullInsured)');
       }
 
       // ПРИОРИТЕТ 2: Если нет данных из getContragent, используем сохраненные данные из формы
@@ -115,26 +95,6 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
           childDataFromSaved = dataWithoutFullData;
         }
       }
-
-      // Отладочное логирование
-      console.log('[OWN_CHILD] Восстановление данных:', {
-        hasSavedData: !!savedData,
-        hasFullData: !!savedData.fullData,
-        hasFullInsured: !!savedData.fullData?.fullInsured,
-        hasLegalRep: !!savedData.fullData?.legalRep,
-        childDataFromSaved: childDataFromSaved ? {
-          hasData: true,
-          iin: childDataFromSaved.iin,
-          name: childDataFromSaved.name,
-          surname: childDataFromSaved.surname,
-          gender: childDataFromSaved.gender,
-          economSecId: childDataFromSaved.economSecId,
-          countryId: childDataFromSaved.countryId,
-          vidDocId: childDataFromSaved.vidDocId,
-          issuedBy: childDataFromSaved.issuedBy
-        } : null,
-        currentViewBefore: currentView
-      });
 
       // Восстанавливаем данные ребенка
       if (childDataFromSaved && (childDataFromSaved.iin || childDataFromSaved.name || childDataFromSaved.surname)) {
@@ -205,18 +165,9 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
 
         // Автоматически открываем форму с заполненными данными
         // Если есть данные ребенка из getContragent, всегда открываем форму 'filled'
-        console.log('[OWN_CHILD] Устанавливаем currentView в "filled" и разворачиваем секцию ребенка');
-        console.log('[OWN_CHILD] Данные ребенка для установки:', {
-          iin: childDataFromSaved.iin,
-          name: childDataFromSaved.name,
-          surname: childDataFromSaved.surname
-        });
         // Устанавливаем view и разворачиваем секцию СРАЗУ, не ждем следующего рендера
         setCurrentView('filled');
         setChildSectionCollapsed(false);
-        console.log('[OWN_CHILD] currentView установлен в "filled", childSectionCollapsed установлен в false');
-      } else {
-        console.log('[OWN_CHILD] Нет данных ребенка для восстановления - childDataFromSaved:', childDataFromSaved);
       }
 
       // Восстанавливаем данные из fullData (если есть)
@@ -249,12 +200,10 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         if (restored.currentView) {
           // Если явно сохранен view, используем его только если нет данных ребенка
           if (!childDataFromSaved) {
-            console.log('[OWN_CHILD] Восстанавливаем currentView из fullData:', restored.currentView);
             setCurrentView(restored.currentView);
           }
         } else if (restored.fullInsured || restored.childData || childDataFromSaved) {
           // Если есть данные ребенка (из любого источника), сразу открываем форму
-          console.log('[OWN_CHILD] Есть данные ребенка - открываем форму "filled" (пропускаем выбор)');
           setCurrentView('filled');
           setChildSectionCollapsed(false);
         }
@@ -263,7 +212,6 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
       // ФИНАЛЬНАЯ ПРОВЕРКА: Если есть данные ребенка, гарантируем, что view установлен в 'filled'
       // Это нужно сделать в конце, чтобы перезаписать любые другие значения
       if (childDataFromSaved && (childDataFromSaved.iin || childDataFromSaved.name || childDataFromSaved.surname)) {
-        console.log('[OWN_CHILD] ФИНАЛЬНАЯ ПРОВЕРКА: Устанавливаем currentView в "filled" и разворачиваем секцию');
         setCurrentView('filled');
         setChildSectionCollapsed(false);
       }

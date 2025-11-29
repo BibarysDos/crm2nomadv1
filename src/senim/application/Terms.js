@@ -1,139 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useTerms } from '../hooks/useTerms';
 import InsuranceProduct from '../dictionary/InsuranceProduct';
 import FrequencyPayment from '../dictionary/FrequencyPayment';
-import { loadGlobalApplicationData, updateGlobalApplicationSection } from '../../services/storageService';
 
-const Terms = ({ onBack, onSave, applicationId }) => {
+const Terms = ({ onBack, onSave, applicationId, processDetails, taskId, historyData }) => {
   const [currentView, setCurrentView] = useState('main');
-  const [dictionaryValues, setDictionaryValues] = useState({
-    insuranceProduct: '',
-    frequencyPayment: ''
-  });
-  const [toggleStates, setToggleStates] = useState({
-    flightAndAccommodation: false
-  });
-  
-  // Состояние для полей с календарем
-  const [dateValues, setDateValues] = useState({
-    startDate: '',
-    endDate: ''
-  });
-  
-  // Состояние для отслеживания активного поля
-  const [activeField, setActiveField] = useState(null);
-  
-  // Флаг для предотвращения сохранения при начальной загрузке
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  // Загрузка данных из глобального хранилища при монтировании
-  useEffect(() => {
-    if (applicationId) {
-      const globalData = loadGlobalApplicationData(applicationId);
-      if (globalData && globalData.Terms) {
-        const savedData = globalData.Terms;
-        console.log('📖 [УСЛОВИЯ] Загружено из глобального хранилища:', savedData);
-        if (savedData.dictionaryValues) setDictionaryValues(savedData.dictionaryValues);
-        if (savedData.toggleStates) setToggleStates(savedData.toggleStates);
-        if (savedData.dateValues) setDateValues(savedData.dateValues);
-      }
-    }
-    setIsInitialLoad(false);
-  }, [applicationId]);
-
-  // Автоматическое сохранение данных в глобальное хранилище при их изменении
-  useEffect(() => {
-    if (!isInitialLoad && applicationId) {
-      const termsData = {
-        dictionaryValues,
-        toggleStates,
-        dateValues
-      };
-      console.log('💾 [УСЛОВИЯ] Автосохранение в глобальное хранилище:', termsData);
-      updateGlobalApplicationSection('Terms', termsData, applicationId);
-    }
-  }, [dictionaryValues, toggleStates, dateValues, isInitialLoad, applicationId]);
+  const {
+    dictionaryValues,
+    toggleStates,
+    dateValues,
+    activeField,
+    isLoadingContract,
+    handleDictionaryValueSelect,
+    handleToggleClick,
+    handleFieldClick,
+    handleDateChange,
+    handleSave: handleSaveAndBack,
+    getInsuranceAmount,
+    getTransplantationAmount,
+    getCurrentDate,
+    getDisplayValue
+  } = useTerms(applicationId, taskId, historyData, onSave);
 
   const handleBackToMain = () => setCurrentView('main');
   const handleOpenInsuranceProduct = () => setCurrentView('insuranceProduct');
   const handleOpenFrequencyPayment = () => setCurrentView('frequencyPayment');
 
-  const handleDictionaryValueSelect = (fieldName, value) => {
-    setDictionaryValues(prev => ({
-      ...prev,
-      [fieldName]: value
-    }));
-    setCurrentView('main');
-  };
-
-  const handleToggleClick = (toggleName) => {
-    setToggleStates(prev => ({
-      ...prev,
-      [toggleName]: !prev[toggleName]
-    }));
-  };
-
-  // Активация поля при клике
-  const handleFieldClick = (fieldName) => {
-    setActiveField(fieldName);
-  };
-
-  const handleSave = () => {
-    const termsData = {
-      dictionaryValues,
-      toggleStates,
-      dateValues
-    };
-    
-    // Сохраняем в глобальное хранилище
-    if (applicationId) {
-      console.log('💾 [УСЛОВИЯ] Сохранение по кнопке:', termsData);
-      updateGlobalApplicationSection('Terms', termsData, applicationId);
-    }
-    
-    if (onSave) {
-      onSave(termsData);
-    }
+  const handleSave = async () => {
+    await handleSaveAndBack();
     if (onBack) {
       onBack();
     }
-  };
-
-  const getInsuranceAmount = () => {
-    if (!dictionaryValues.insuranceProduct) {
-      return null;
-    }
-    // Извлекаем число из названия программы (например, "«CEHIM» Бизнес 150" → 150)
-    const match = dictionaryValues.insuranceProduct.match(/(\d+)/);
-    if (match) {
-      const amount = parseInt(match[1], 10);
-      return `${amount} 000 USD`;
-    }
-    return null;
-  };
-
-  const getTransplantationAmount = () => {
-    if (!dictionaryValues.insuranceProduct) {
-      return null;
-    }
-    // Извлекаем число из названия программы (например, "«CEHIM» Бизнес 150" → 150)
-    const match = dictionaryValues.insuranceProduct.match(/(\d+)/);
-    if (match) {
-      const programNumber = parseInt(match[1], 10);
-      if (programNumber === 150) {
-        return '500 000 USD';
-      } else if (programNumber === 200 || programNumber === 250) {
-        return '1 000 000 USD';
-      }
-    }
-    return null;
-  };
-
-  const getCurrentDate = () => {
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-    return `${day}.${month}.${year}`;
   };
 
   // Функция рендеринга поля с календарем
@@ -142,7 +40,6 @@ const Terms = ({ onBack, onSave, applicationId }) => {
     const hasValue = !!dateValues[fieldName];
 
     if (isActive || hasValue) {
-      // Активное состояние - с полем ввода
       return (
         <div data-layer={`Input '${label}'`} data-state="pressed" className="Input" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex'}}>
           <div data-layer="Text field container" className="TextFieldContainer" style={{flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex'}}>
@@ -152,14 +49,12 @@ const Terms = ({ onBack, onSave, applicationId }) => {
                 type="text"
                 value={dateValues[fieldName] || ''}
                 onChange={(e) => {
-                  setDateValues(prev => ({
-                    ...prev,
-                    [fieldName]: e.target.value
-                  }));
+                  const newValue = e.target.value;
+                  handleDateChange(fieldName, newValue);
                 }}
                 onBlur={() => {
                   if (!dateValues[fieldName]) {
-                    setActiveField(null);
+                    handleFieldClick(null);
                   }
                 }}
                 autoFocus={isActive}
@@ -195,7 +90,6 @@ const Terms = ({ onBack, onSave, applicationId }) => {
         </div>
       );
     } else {
-      // Обычное состояние - только название
       return (
         <div data-layer={`Input '${label}'`} data-state="not_pressed" className="Input" onClick={() => handleFieldClick(fieldName)} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex', cursor: 'pointer'}}>
           <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
@@ -222,11 +116,12 @@ const Terms = ({ onBack, onSave, applicationId }) => {
 
   const renderDictionaryButton = (fieldName, label, onClickHandler, hasValue) => {
     if (hasValue) {
+      const displayValue = getDisplayValue(dictionaryValues[fieldName]);
       return (
         <div data-layer={`Input '${label}'`} data-state="pressed" className="Input" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex'}}>
           <div data-layer="Text field container" className="TextFieldContainer" style={{flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex'}}>
             <div data-layer="Label" className="Label" style={{alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 14, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{label}</div>
-            <div data-layer="Input text" className="InputText" style={{alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{dictionaryValues[fieldName]}</div>
+            <div data-layer="Input text" className="InputText" style={{alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{displayValue}</div>
           </div>
           <div data-layer="Open button" className="OpenButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', cursor: 'pointer'}} onClick={onClickHandler}>
             <div data-svg-wrapper data-layer="Chewron right" className="ChewronRight" style={{left: 31, top: 32, position: 'absolute'}}>
@@ -255,12 +150,34 @@ const Terms = ({ onBack, onSave, applicationId }) => {
     }
   };
 
+  // Рендеринг словарей
   if (currentView === 'insuranceProduct') {
-    return <InsuranceProduct onBack={handleBackToMain} onSelect={(value) => handleDictionaryValueSelect('insuranceProduct', value)} />;
+    return <InsuranceProduct onBack={handleBackToMain} onSelect={(value) => { handleDictionaryValueSelect('insuranceProduct', value); handleBackToMain(); }} initialValue={dictionaryValues.insuranceProduct} />;
   }
 
   if (currentView === 'frequencyPayment') {
-    return <FrequencyPayment onBack={handleBackToMain} onSelect={(value) => handleDictionaryValueSelect('frequencyPayment', value)} />;
+    const programId = dictionaryValues.insuranceProduct && typeof dictionaryValues.insuranceProduct === 'object' 
+      ? dictionaryValues.insuranceProduct.id 
+      : null;
+    return (
+      <FrequencyPayment 
+        onBack={handleBackToMain} 
+        onSelect={(value) => { handleDictionaryValueSelect('frequencyPayment', value); handleBackToMain(); }} 
+        programId={programId}
+        initialValue={dictionaryValues.frequencyPayment}
+      />
+    );
+  }
+
+  // Показываем индикатор загрузки, пока данные загружаются
+  if (isLoadingContract) {
+    return (
+      <div style={{width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'white'}}>
+        <div style={{textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500'}}>
+          Загрузка данных условий...
+        </div>
+      </div>
+    );
   }
 
   return (

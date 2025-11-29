@@ -33,7 +33,9 @@ export const mapHistoryItem = (item = {}) => ({
     '',
   comment: sanitizeHistoryValue(item.comment) ||
     sanitizeHistoryValue(item.reason) ||
-    ''
+    '',
+  // Сохраняем taskId из оригинального элемента для использования в API запросах
+  taskId: item.taskId || item.id || null
 });
 
 export const normalizeHistoryData = (data = {}) => {

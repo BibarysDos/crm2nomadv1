@@ -1,10 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getPrograms } from '../../services/processService';
+import { getAccessToken } from '../../services/storageService';
 
-const InsuranceProduct = ({ onBack, onSelect }) => {
-  const [selectedValue, setSelectedValue] = useState(null);
+const InsuranceProduct = ({ onBack, onSelect, initialValue }) => {
+  const [selectedValue, setSelectedValue] = useState(initialValue || null);
+  const [programs, setPrograms] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const handleSelect = (value) => {
-    setSelectedValue(value);
+  useEffect(() => {
+    const loadPrograms = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const token = getAccessToken();
+        const programsData = await getPrograms('SenimNew', token);
+        // Сортируем программы по коду (1, 2, 3...)
+        const sortedPrograms = (programsData || []).sort((a, b) => {
+          const codeA = parseInt(a.code || '0', 10);
+          const codeB = parseInt(b.code || '0', 10);
+          return codeA - codeB;
+        });
+        
+        setPrograms(sortedPrograms);
+      } catch (err) {
+        setError(err.message || 'Не удалось загрузить программы страхования');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPrograms();
+  }, []);
+
+  // Обновляем selectedValue при изменении initialValue
+  useEffect(() => {
+    if (initialValue) {
+      setSelectedValue(initialValue);
+    }
+  }, [initialValue]);
+
+  const handleSelect = (program) => {
+    setSelectedValue(program);
   };
 
   const handleSave = () => {
@@ -35,54 +72,49 @@ const InsuranceProduct = ({ onBack, onSelect }) => {
       </div>
     </div>
     <div data-layer="Fields List" className="FieldsList" style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === '«CEHIM» Бизнес 150' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('«CEHIM» Бизнес 150')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>«CEHIM» Бизнес 150 </div>
+      {isLoading ? (
+        <div data-layer="Loading state" className="LoadingState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Загрузка программ...</div>
         </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === '«CEHIM» Бизнес 150' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
+      ) : error ? (
+        <div data-layer="Error state" className="ErrorState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#D32F2F', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>{error}</div>
         </div>
-      </div>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === '«CEHIM» Бизнес 200' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('«CEHIM» Бизнес 200')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>«CEHIM» Бизнес 200</div>
+      ) : programs.length === 0 ? (
+        <div data-layer="Empty state" className="EmptyState" style={{alignSelf: 'stretch', height: 200, paddingLeft: 40, background: 'white', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', display: 'flex'}}>
+          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Программы недоступны</div>
         </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === '«CEHIM» Бизнес 200' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div data-layer="InputContainerRadioButton" data-state={selectedValue === '«CEHIM» Бизнес 250' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleSelect('«CEHIM» Бизнес 250')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
-        <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
-          <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>«CEHIM» Бизнес 250</div>
-        </div>
-        <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-          <div data-svg-wrapper data-layer="Ellipse-off" className="EllipseOff" style={{left: 35, top: 36, position: 'absolute'}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {selectedValue === '«CEHIM» Бизнес 250' ? (
-              <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
-            ) : (
-              <circle cx="7" cy="7" r="6.5" stroke="black"/>
-            )}
-            </svg>
-          </div>
-        </div>
-      </div>
+      ) : (
+        programs.map((program) => {
+          const isSelected = selectedValue && (
+            (typeof selectedValue === 'object' && selectedValue.id === program.id) ||
+            (typeof selectedValue === 'string' && selectedValue === program.nameRu)
+          );
+          return (
+            <div
+              key={program.id}
+              data-layer="InputContainerRadioButton"
+              data-state={isSelected ? 'pressed' : 'not_pressed'}
+              className="Inputcontainerradiobutton"
+              onClick={() => handleSelect(program)}
+              style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}
+            >
+              <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
+                <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>
+                  {program.nameRu || program.nameKz || `Программа ${program.code}`}
+                </div>
+              </div>
+              <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
+                <div data-svg-wrapper data-layer={isSelected ? "Ellipse-on" : "Ellipse-off"} className={isSelected ? "EllipseOn" : "EllipseOff"} style={{left: 35, top: 36, position: 'absolute'}}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="7" cy="7" r="6.5" fill={isSelected ? "black" : "none"} stroke="black"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   </div>
     </div>

@@ -2,14 +2,30 @@ import React from 'react';
 
 const getTermsInsuranceProductName = (terms) => {
   if (!terms) return '';
-  return terms.dictionaryValues?.insuranceProduct || terms.insuranceProduct || '';
+  const insuranceProduct = terms.dictionaryValues?.insuranceProduct || terms.insuranceProduct || '';
+  // Если это объект, извлекаем название
+  if (typeof insuranceProduct === 'object' && insuranceProduct !== null) {
+    return insuranceProduct.nameRu || insuranceProduct.nameKz || insuranceProduct.code || '';
+  }
+  return insuranceProduct;
 };
 
 const getInsuranceAmount = (insuranceProduct) => {
   if (!insuranceProduct) {
     return null;
   }
-  const match = insuranceProduct.match(/(\d+)/);
+  // Извлекаем число из названия программы или кода
+  let programText = '';
+  if (typeof insuranceProduct === 'object') {
+    programText = insuranceProduct.nameRu || insuranceProduct.nameKz || insuranceProduct.code || '';
+  } else {
+    programText = insuranceProduct;
+  }
+  // Проверяем, что programText - строка перед вызовом match
+  if (typeof programText !== 'string') {
+    return null;
+  }
+  const match = programText.match(/(\d+)/);
   if (match) {
     const amount = parseInt(match[1], 10);
     return `${amount} 000 USD`;

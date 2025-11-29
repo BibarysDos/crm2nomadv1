@@ -25,7 +25,6 @@ const Country = ({ onBack, onSave, initialValue }) => {
           setCountries([]);
         }
       } catch (err) {
-        console.error('Ошибка загрузки стран:', err);
         setError(err.message || 'Ошибка загрузки данных');
         setCountries([]);
       } finally {

@@ -89,25 +89,6 @@ export const useOtherPerson = ({ applicationId, taskId, savedData, onSave, onBac
         }
       }
       
-      // Отладочное логирование
-      console.log('[OTHER_PERSON] Восстановление данных:', {
-        hasSavedData: !!savedData,
-        hasFullData: !!savedData.fullData,
-        hasInsuredData: !!insuredDataFromSaved,
-        savedDataKeys: savedData ? Object.keys(savedData) : [],
-        insuredDataKeys: insuredDataFromSaved ? Object.keys(insuredDataFromSaved) : [],
-        gender: insuredDataFromSaved?.gender,
-        genderType: typeof insuredDataFromSaved?.gender,
-        economSecId: insuredDataFromSaved?.economSecId,
-        economSecIdType: typeof insuredDataFromSaved?.economSecId,
-        countryId: insuredDataFromSaved?.countryId,
-        countryIdType: typeof insuredDataFromSaved?.countryId,
-        vidDocId: insuredDataFromSaved?.vidDocId,
-        vidDocIdType: typeof insuredDataFromSaved?.vidDocId,
-        issuedBy: insuredDataFromSaved?.issuedBy,
-        issuedByType: typeof insuredDataFromSaved?.issuedBy
-      });
-      
       // Проверяем, есть ли данные застрахованного
       if (insuredDataFromSaved && (insuredDataFromSaved.iin || insuredDataFromSaved.name || insuredDataFromSaved.surname)) {
         // Восстанавливаем данные застрахованного
@@ -145,35 +126,6 @@ export const useOtherPerson = ({ applicationId, taskId, savedData, onSave, onBac
         const restoredVidDocId = getDictionaryValue(insuredDataFromSaved.vidDocId);
         const restoredIssuedBy = getDictionaryValue(insuredDataFromSaved.issuedBy);
 
-        // Детальное логирование каждого справочника
-        console.log('[OTHER_PERSON] Извлеченные справочники:', {
-          gender: {
-            raw: insuredDataFromSaved.gender,
-            restored: restoredGender,
-            type: typeof restoredGender
-          },
-          economSecId: {
-            raw: insuredDataFromSaved.economSecId,
-            restored: restoredEconomSecId,
-            type: typeof restoredEconomSecId
-          },
-          countryId: {
-            raw: insuredDataFromSaved.countryId,
-            restored: restoredCountryId,
-            type: typeof restoredCountryId
-          },
-          vidDocId: {
-            raw: insuredDataFromSaved.vidDocId,
-            restored: restoredVidDocId,
-            type: typeof restoredVidDocId
-          },
-          issuedBy: {
-            raw: insuredDataFromSaved.issuedBy,
-            restored: restoredIssuedBy,
-            type: typeof restoredIssuedBy
-          }
-        });
-
         // Функция для выбора значения справочника (приоритет восстановленному значению)
         const getDictionaryOrPrev = (restored, prevValue) => {
           // Если восстановленное значение определено (даже если это пустая строка или объект), используем его
@@ -191,14 +143,6 @@ export const useOtherPerson = ({ applicationId, taskId, savedData, onSave, onBac
         const finalCountryId = getDictionaryOrPrev(restoredCountryId, undefined);
         const finalVidDocId = getDictionaryOrPrev(restoredVidDocId, undefined);
         const finalIssuedBy = getDictionaryOrPrev(restoredIssuedBy, undefined);
-
-        console.log('[OTHER_PERSON] Финальные значения справочников перед установкой:', {
-          gender: finalGender,
-          economSecId: finalEconomSecId,
-          countryId: finalCountryId,
-          vidDocId: finalVidDocId,
-          issuedBy: finalIssuedBy
-        });
 
         setInsuredData(prev => ({
           iin: getValue(insuredDataFromSaved.iin, prev.iin || ''),
@@ -225,15 +169,6 @@ export const useOtherPerson = ({ applicationId, taskId, savedData, onSave, onBac
           settlementName: getValue(insuredDataFromSaved.settlementName, prev.settlementName || ''),
           residency: getValue(insuredDataFromSaved.residency, prev.residency || 'Резидент')
         }));
-
-        // Отладочное логирование после установки данных
-        console.log('[OTHER_PERSON] Данные будут установлены:', {
-          gender: restoredGender,
-          economSecId: restoredEconomSecId,
-          countryId: restoredCountryId,
-          vidDocId: restoredVidDocId,
-          issuedBy: restoredIssuedBy
-        });
       }
 
       // Восстанавливаем состояние формы
@@ -264,19 +199,6 @@ export const useOtherPerson = ({ applicationId, taskId, savedData, onSave, onBac
     }
   }, [savedData]);
 
-  // Логирование установленных данных для отладки
-  useEffect(() => {
-    console.log('[OTHER_PERSON] Текущее состояние insuredData:', {
-      gender: insuredData.gender,
-      economSecId: insuredData.economSecId,
-      countryId: insuredData.countryId,
-      vidDocId: insuredData.vidDocId,
-      issuedBy: insuredData.issuedBy,
-      iin: insuredData.iin,
-      name: insuredData.name,
-      surname: insuredData.surname
-    });
-  }, [insuredData]);
 
   // Обработчики для формы
   const handleFieldClick = (fieldName) => {

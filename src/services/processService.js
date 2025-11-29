@@ -10,7 +10,8 @@ const getTokenOrThrow = (token) => {
   if (!resolved) {
     throw new Error('Токен авторизации не найден');
   }
-  return resolved;
+  // Убираем возможные пробелы и переносы строк
+  return resolved.trim();
 };
 
 const handleResponse = async (response, defaultErrorMessage) => {
@@ -227,6 +228,118 @@ export const getDictionaryValues = async (code, token) => {
 };
 
 /**
+ * Получить программы страхования
+ * @param {string} processDefinitionCode - Код определения процесса (например, "SenimNew")
+ * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
+ * @returns {Promise<Array>} Массив программ страхования
+ */
+export const getPrograms = async (processDefinitionCode = 'SenimNew', token) => {
+  const authToken = getTokenOrThrow(token);
+
+  const response = await fetch(`${DICTIONARY_BASE_URL}/GetPrograms`, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      processDefinitionCode,
+    }),
+  });
+
+  return handleResponse(response, 'Ошибка получения программ страхования');
+};
+
+/**
+ * Получить частоты оплаты для программы страхования
+ * @param {string} programId - ID программы страхования
+ * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
+ * @returns {Promise<Array>} Массив частот оплаты
+ */
+export const getProgramPaymentFrequencies = async (programId, token) => {
+  if (!programId) {
+    throw new Error('ID программы не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const response = await fetch(`${DICTIONARY_BASE_URL}/GetProgramPaymentFrequencies`, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      programId,
+    }),
+  });
+
+  return handleResponse(response, 'Ошибка получения частот оплаты');
+};
+
+/**
+ * Получить контракт по ID задачи
+ * @param {string} taskId - ID задачи (taskId из истории)
+ * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
+ * @returns {Promise<Object>} Данные контракта или null если 404
+ */
+export const getContract = async (taskId, token) => {
+  if (!taskId) {
+    throw new Error('ID задачи (taskId) не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const response = await fetch(`${STATEMENT_BASE_URL}/Contract/${taskId}`, {
+    method: 'GET',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      Authorization: `Bearer ${authToken}`,
+    },
+  });
+
+  // Если 404 - контракт не существует, это нормально
+  if (response.status === 404) {
+    return null;
+  }
+
+  return handleResponse(response, 'Ошибка получения контракта');
+};
+
+/**
+ * Обновить контракт
+ * @param {Object} contractData - Данные контракта (id должен быть null для нового контракта)
+ * @param {string} taskId - ID задачи (taskId из истории, используется как accessId в query)
+ * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
+ * @returns {Promise<Object>} Обновленные данные контракта
+ */
+export const updateContract = async (contractData, taskId, token) => {
+  if (!contractData) {
+    throw new Error('Данные контракта не указаны');
+  }
+  if (!taskId) {
+    throw new Error('ID задачи (taskId) не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const url = `${STATEMENT_BASE_URL}/Contract?accessId=${encodeURIComponent(taskId)}`;
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(contractData),
+  });
+
+  return handleResponse(response, 'Ошибка обновления контракта');
+};
+
+/**
  * Получить данные контрагента по ID
  * @param {string} contragentId - ID контрагента
  * @param {string} accessId - ID доступа (processInstanceId)
@@ -338,4 +451,104 @@ export const getStatementParticipants = async (accessId, token) => {
     }
     return [];
   }
+};
+
+/**
+ * Получить анкету для контрагента
+ * @param {string} contragentId - ID контрагента (застрахованного)
+ * @param {string} accessId - ID доступа (taskId)
+ * @param {string} token - Токен авторизации (опционально)
+ * @param {string} questionnaireTypeCode - Тип анкеты: 'healthdeclaration' или 'questionnaire' (опционально, по умолчанию 'healthdeclaration')
+ * @returns {Promise<Object>} Данные анкеты
+ */
+export const getQuestionnaire = async (contragentId, accessId, token, questionnaireTypeCode = 'healthdeclaration') => {
+  if (!contragentId) {
+    throw new Error('ID контрагента не указан');
+  }
+  if (!accessId) {
+    throw new Error('accessId не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const url = `${STATEMENT_BASE_URL}/Questionnaire/${contragentId}/${questionnaireTypeCode}?accessId=${encodeURIComponent(accessId)}`;
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      Authorization: `Bearer ${authToken}`,
+    },
+  });
+
+  // Если 404, возвращаем null вместо ошибки
+  if (response.status === 404) {
+    return null;
+  }
+
+  return handleResponse(response, 'Ошибка получения анкеты');
+};
+
+/**
+ * Получить варианты ответов для вопроса
+ * @param {string} questionCode - Код вопроса
+ * @param {string} token - Токен авторизации (опционально)
+ * @returns {Promise<Array>} Массив вариантов ответов
+ */
+export const getQuestionAnswers = async (questionCode, token) => {
+  if (!questionCode) {
+    throw new Error('Код вопроса не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const response = await fetch(`${DICTIONARY_BASE_URL}/GetQuestionAnswers`, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      questionCode,
+    }),
+  });
+
+  return handleResponse(response, 'Ошибка получения вариантов ответов');
+};
+
+/**
+ * Обновить анкету
+ * @param {Object} questionnaireData - Данные анкеты для обновления
+ * @param {string} accessId - ID доступа (taskId)
+ * @param {string} token - Токен авторизации (опционально)
+ * @returns {Promise<Object>} Обновленные данные анкеты
+ */
+export const updateQuestionnaire = async (questionnaireData, accessId, token) => {
+  if (!questionnaireData) {
+    throw new Error('Данные анкеты не указаны');
+  }
+  if (!accessId) {
+    throw new Error('accessId не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  const url = `${STATEMENT_BASE_URL}/Questionnaire?accessId=${encodeURIComponent(accessId)}`;
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(questionnaireData),
+  });
+
+  if (!response.ok && response.status === 401) {
+    throw new Error('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
+  }
+
+  return handleResponse(response, 'Ошибка обновления анкеты');
 };

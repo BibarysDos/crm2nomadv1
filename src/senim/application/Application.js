@@ -3,7 +3,7 @@ import Policyholder from './Policyholder';
 import Insured from './Insured/Insured';
 import Beneficiary from './Beneficiary';
 import Terms from './Terms';
-import Questionary from './Questionary';
+import Questionary from './Questionary/Questionary';
 import History from './History';
 import RejectReason from './RejectReason';
 import ApplicationHeader from './layout/ApplicationHeader';
@@ -41,7 +41,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     reasonsLoading,
     processError,
     userRole,
-    isLoadingApplicationData
+    isLoadingApplicationData,
+    isLoadingInsured
   } = state;
 
   const { currentTaskId, canClaimTaskNow, isDecisionDisabled } = derived;
@@ -119,6 +120,16 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   }
 
   if (currentView === 'insured') {
+    // Показываем индикатор загрузки, пока данные застрахованного загружаются
+    if (isLoadingInsured) {
+      return (
+        <div style={{width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'white'}}>
+          <div style={{textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500'}}>
+            Загрузка данных застрахованного...
+          </div>
+        </div>
+      );
+    }
     return <Insured onBack={handleBackToMain} policyholderData={policyholderData} onSave={handleInsuredSave} applicationId={applicationId} taskId={processState?.taskId} savedInsuredData={insuredData} />;
   }
 
@@ -127,11 +138,43 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   }
 
   if (currentView === 'terms') {
-    return <Terms onBack={handleBackToMain} onSave={handleTermsSave} applicationId={applicationId} />;
+    return <Terms onBack={handleBackToMain} onSave={handleTermsSave} applicationId={applicationId} processDetails={processDetails} taskId={currentTaskId} historyData={historyData} />;
   }
 
   if (currentView === 'questionary') {
-    return <Questionary onBack={handleBackToMain} onSave={handleQuestionarySave} applicationId={applicationId} />;
+    // Получаем contragentId клиента и застрахованного из processDetails
+    let clientContragentId = null;
+    let insuredContragentId = null;
+    
+    if (processDetails?.contragents) {
+      const clientContragent = processDetails.contragents.find(c => c.contragentRoleCode === 'client');
+      const insuredContragent = processDetails.contragents.find(c => c.contragentRoleCode === 'insured');
+      
+      if (clientContragent?.id) {
+        clientContragentId = clientContragent.id;
+      }
+      if (insuredContragent?.id) {
+        insuredContragentId = insuredContragent.id;
+      }
+    }
+    
+    // Fallback на insuredData, если не нашли в processDetails
+    if (!insuredContragentId && insuredData?.fullData?.fullInsured?.id) {
+      insuredContragentId = insuredData.fullData.fullInsured.id;
+    }
+    
+    return (
+      <Questionary 
+        onBack={handleBackToMain} 
+        onSave={handleQuestionarySave} 
+        applicationId={applicationId}
+        clientContragentId={clientContragentId}
+        insuredContragentId={insuredContragentId}
+        taskId={currentTaskId}
+        historyData={historyData}
+        processDetails={processDetails}
+      />
+    );
   }
 
   if (currentView === 'reject') {
@@ -205,7 +248,7 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
       <InsuredCard insuredData={insuredData} onOpen={handleOpenInsured} />
       <BeneficiaryCard beneficiaryData={beneficiaryData} />
       <TermsCard termsData={termsData} onOpen={handleOpenTerms} />
-      <QuestionaryCard hasQuestionary={Boolean(questionaryData)} onOpen={handleOpenQuestionary} />
+      <QuestionaryCard hasQuestionary={Boolean(questionaryData)} questionnaireData={questionaryData} onOpen={handleOpenQuestionary} />
     </div>
   </div>
   </div>

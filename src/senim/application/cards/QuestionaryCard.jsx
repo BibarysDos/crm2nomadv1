@@ -1,6 +1,77 @@
 import React from 'react';
 
-const QuestionaryCard = ({ hasQuestionary, onOpen }) => {
+const QuestionaryCard = ({ hasQuestionary, questionnaireData, onOpen }) => {
+  // Проверяем, заполнена ли декларация
+  // Декларация заполнена, если все вопросы декларации (questionCode 1-21) имеют ответы
+  const isDeclarationFilled = () => {
+    if (!questionnaireData?.contragentQuestionnaires) {
+      return false;
+    }
+    
+    // Фильтруем вопросы декларации (questionCode от 1 до 21)
+    const declarationQuestions = questionnaireData.contragentQuestionnaires.filter(q => {
+      if (!q.questionCode) return false; // Включаем только вопросы с questionCode
+      const questionCodeNum = parseInt(q.questionCode);
+      return questionCodeNum >= 1 && questionCodeNum <= 21;
+    });
+    
+    // Если нет вопросов декларации, считаем не заполненной
+    if (declarationQuestions.length === 0) {
+      return false;
+    }
+    
+    // Проверяем, что все вопросы декларации имеют ответы
+    return declarationQuestions.every(q => {
+      // Для справочника проверяем answerId или answerCode
+      if (q.answerTypeCode === 'dic') {
+        return !!(q.answerId || q.answerCode);
+      }
+      // Для числовых полей проверяем answer
+      if (q.answerTypeCode === 'num') {
+        return !!(q.answer && String(q.answer).trim() !== '');
+      }
+      // Для других типов проверяем наличие любого ответа
+      return !!(q.answerId || q.answerCode || (q.answer && String(q.answer).trim() !== ''));
+    });
+  };
+
+  // Проверяем, заполнен ли бланк-опросник
+  // Бланк-опросник заполнен, если все вопросы бланк-опросника (questionCode 22-45) имеют ответы
+  const isQuestionnaireFilled = () => {
+    if (!questionnaireData?.contragentQuestionnaires) {
+      return false;
+    }
+    
+    // Фильтруем вопросы бланк-опросника (questionCode от 22 до 45)
+    const questionnaireQuestions = questionnaireData.contragentQuestionnaires.filter(q => {
+      if (!q.questionCode) return false;
+      const questionCodeNum = parseInt(q.questionCode);
+      return questionCodeNum >= 22 && questionCodeNum <= 45;
+    });
+    
+    // Если нет вопросов бланк-опросника, считаем не заполненным
+    if (questionnaireQuestions.length === 0) {
+      return false;
+    }
+    
+    // Проверяем, что все вопросы бланк-опросника имеют ответы
+    return questionnaireQuestions.every(q => {
+      // Для справочника проверяем answerId или answerCode
+      if (q.answerTypeCode === 'dic') {
+        return !!(q.answerId || q.answerCode);
+      }
+      // Для числовых полей проверяем answer
+      if (q.answerTypeCode === 'num') {
+        return !!(q.answer && String(q.answer).trim() !== '');
+      }
+      // Для других типов проверяем наличие любого ответа
+      return !!(q.answerId || q.answerCode || (q.answer && String(q.answer).trim() !== ''));
+    });
+  };
+
+  const declarationStatus = isDeclarationFilled() ? 'Заполнено' : 'Не заполнено';
+  const questionnaireStatus = isQuestionnaireFilled() ? 'Заполнено' : 'Не заполнено';
+  
   return (
     <div
       data-layer="Health questions"
@@ -97,7 +168,165 @@ const QuestionaryCard = ({ hasQuestionary, onOpen }) => {
       </div>
       {hasQuestionary ? (
         <>
-          {/* Здесь можно добавить отображение данных анкеты, если нужно */}
+          <div
+            data-layer="Info container"
+            className="InfoContainer"
+            style={{
+              alignSelf: 'stretch',
+              height: 85,
+              paddingLeft: 20,
+              paddingRight: 20,
+              background: 'white',
+              overflow: 'hidden',
+              borderBottom: '1px #F8E8E8 solid',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'flex-start',
+              display: 'flex'
+            }}
+          >
+            <div
+              data-layer="Label"
+              className="Label"
+              style={{
+                justifyContent: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                color: '#6B6D80',
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: '500',
+                wordWrap: 'break-word'
+              }}
+            >
+              Декларация о состоянии здоровья Застрахованного
+            </div>
+            <div
+              data-layer="Input text"
+              className="InputText"
+              style={{
+                justifyContent: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                color: '#071222',
+                fontSize: 16,
+                fontFamily: 'Inter',
+                fontWeight: '500',
+                wordWrap: 'break-word'
+              }}
+            >
+              {declarationStatus}
+            </div>
+          </div>
+          {/* Показываем статус бланк-опросника, если есть вопросы бланк-опросника */}
+          {questionnaireData?.contragentQuestionnaires?.some(q => {
+            if (!q.questionCode) return false;
+            const questionCodeNum = parseInt(q.questionCode);
+            return questionCodeNum >= 22 && questionCodeNum <= 45;
+          }) && (
+            <div
+              data-layer="Info container"
+              className="InfoContainer"
+              style={{
+                alignSelf: 'stretch',
+                height: 85,
+                paddingLeft: 20,
+                paddingRight: 20,
+                background: 'white',
+                overflow: 'hidden',
+                borderBottom: '1px #F8E8E8 solid',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'flex-start',
+                display: 'flex'
+              }}
+            >
+              <div
+                data-layer="Label"
+                className="Label"
+                style={{
+                  justifyContent: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  color: '#6B6D80',
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: '500',
+                  wordWrap: 'break-word'
+                }}
+              >
+                Бланк-опросник
+              </div>
+              <div
+                data-layer="Input text"
+                className="InputText"
+                style={{
+                  justifyContent: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  color: '#071222',
+                  fontSize: 16,
+                  fontFamily: 'Inter',
+                  fontWeight: '500',
+                  wordWrap: 'break-word'
+                }}
+              >
+                {questionnaireStatus}
+              </div>
+            </div>
+          )}
+          {questionnaireData?.fillWithoutManager !== undefined && (
+            <div
+              data-layer="Info container"
+              className="InfoContainer"
+              style={{
+                alignSelf: 'stretch',
+                height: 85,
+                paddingLeft: 20,
+                paddingRight: 20,
+                background: 'white',
+                overflow: 'hidden',
+                borderBottom: '1px #F8E8E8 solid',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'flex-start',
+                display: 'flex'
+              }}
+            >
+              <div
+                data-layer="Label"
+                className="Label"
+                style={{
+                  justifyContent: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  color: '#6B6D80',
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: '500',
+                  wordWrap: 'break-word'
+                }}
+              >
+                Режим заполнения
+              </div>
+              <div
+                data-layer="Input text"
+                className="InputText"
+                style={{
+                  justifyContent: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  color: '#071222',
+                  fontSize: 16,
+                  fontFamily: 'Inter',
+                  fontWeight: '500',
+                  wordWrap: 'break-word'
+                }}
+              >
+                {questionnaireData.fillWithoutManager ? 'Без менеджера' : 'С менеджером'}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div
@@ -183,5 +412,3 @@ const QuestionaryCard = ({ hasQuestionary, onOpen }) => {
 };
 
 export default QuestionaryCard;
-
-

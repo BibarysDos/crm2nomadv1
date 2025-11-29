@@ -23,7 +23,6 @@ const SelectChild = ({ onBack, onSelect, iin, phone }) => {
         const childrenData = await getChildren(iinClean, phoneClean);
         setChildren(childrenData);
       } catch (err) {
-        console.error('Error loading children:', err);
         setError('Ошибка при загрузке данных о детях');
       } finally {
         setLoading(false);

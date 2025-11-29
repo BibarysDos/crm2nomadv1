@@ -50,7 +50,6 @@ export const setCurrentApplicationId = (id) => {
   try {
     localStorage.setItem(STORAGE_KEYS.CURRENT_APPLICATION_ID, id);
   } catch (error) {
-    console.error('Error setting current application ID:', error);
   }
 };
 
@@ -62,7 +61,6 @@ export const getCurrentApplicationId = () => {
   try {
     return localStorage.getItem(STORAGE_KEYS.CURRENT_APPLICATION_ID);
   } catch (error) {
-    console.error('Error getting current application ID:', error);
     return null;
   }
 };
@@ -82,7 +80,6 @@ export const clearApplicationData = (applicationId) => {
       }
     });
   } catch (error) {
-    console.error('Error clearing application data:', error);
   }
 };
 
@@ -96,7 +93,6 @@ export const savePolicyholderData = (data, applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.POLICYHOLDER);
     localStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
-    console.error('Error saving policyholder data to localStorage:', error);
   }
 };
 
@@ -111,7 +107,6 @@ export const loadPolicyholderData = (applicationId = null) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading policyholder data from localStorage:', error);
     return null;
   }
 };
@@ -126,7 +121,6 @@ export const saveInsuredData = (data, applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED);
     localStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
-    console.error('Error saving insured data to localStorage:', error);
   }
 };
 
@@ -141,7 +135,6 @@ export const loadInsuredData = (applicationId = null) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading insured data from localStorage:', error);
     return null;
   }
 };
@@ -155,7 +148,6 @@ export const clearPolicyholderData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.POLICYHOLDER);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing policyholder data from localStorage:', error);
   }
 };
 
@@ -168,7 +160,6 @@ export const clearInsuredData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing insured data from localStorage:', error);
   }
 };
 
@@ -184,7 +175,6 @@ export const clearInsuredPolicyholderData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_POLICYHOLDER);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing insured policyholder data from localStorage:', error);
   }
 };
 
@@ -197,7 +187,6 @@ export const clearInsuredOwnChildData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OWN_CHILD);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing insured own child data from localStorage:', error);
   }
 };
 
@@ -210,7 +199,6 @@ export const clearInsuredOtherChildParentData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_PARENT);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing insured other child parent data from localStorage:', error);
   }
 };
 
@@ -223,7 +211,6 @@ export const clearInsuredOtherChildChildData = (applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.INSURED_OTHER_CHILD_CHILD);
     localStorage.removeItem(key);
   } catch (error) {
-    console.error('Error clearing insured other child child data from localStorage:', error);
   }
 };
 
@@ -260,7 +247,6 @@ export const saveApplicationHistory = (data, applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.APPLICATION_HISTORY);
     localStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
-    console.error('Error saving application history to localStorage:', error);
   }
 };
 
@@ -275,7 +261,6 @@ export const loadApplicationHistory = (applicationId = null) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading application history from localStorage:', error);
     return null;
   }
 };
@@ -290,7 +275,6 @@ export const saveApplicationBeneficiary = (data, applicationId = null) => {
     const key = getApplicationKey(applicationId || getCurrentApplicationId(), STORAGE_KEYS.APPLICATION_BENEFICIARY);
     localStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
-    console.error('Error saving application beneficiary to localStorage:', error);
   }
 };
 
@@ -305,7 +289,6 @@ export const loadApplicationBeneficiary = (applicationId = null) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading application beneficiary from localStorage:', error);
     return null;
   }
 };
@@ -337,9 +320,7 @@ export const saveInsuredCurrentViewHistory = (currentView, applicationId = null)
     
     // Сохраняем обновленный массив
     localStorage.setItem(key, JSON.stringify(viewHistory));
-    console.log('💾 [INSURED CURRENT VIEW HISTORY] Сохранено:', viewHistory);
   } catch (error) {
-    console.error('Error saving insured current view history to localStorage:', error);
   }
 };
 
@@ -356,13 +337,11 @@ export const loadInsuredCurrentViewHistory = (applicationId = null) => {
       const parsed = JSON.parse(data);
       // Проверяем, что это массив
       if (Array.isArray(parsed)) {
-        console.log('📖 [INSURED CURRENT VIEW HISTORY] Загружено:', parsed);
         return parsed;
       }
     }
     return [];
   } catch (error) {
-    console.error('Error loading insured current view history from localStorage:', error);
     return [];
   }
 };
@@ -421,13 +400,11 @@ export const updateGlobalApplicationSection = (section, sectionData, application
   try {
     // НЕ сохраняем Policyholder в global storage - полностью отказываемся от него
     if (section === 'Policyholder') {
-      console.log('⚠️ [GLOBAL STORAGE] Попытка сохранить Policyholder в global storage - игнорируем (полностью отказались от global storage для Policyholder)');
       return;
     }
 
     // НЕ сохраняем Insured в global storage — для застрахованного используем только локальное хранилище
     if (section === 'Insured') {
-      console.log('⚠️ [GLOBAL STORAGE] Попытка сохранить Insured в global storage - игнорируем (используем только локальное хранение для Insured)');
       return;
     }
     
@@ -435,7 +412,6 @@ export const updateGlobalApplicationSection = (section, sectionData, application
     globalData[section] = sectionData;
     saveGlobalApplicationData(globalData, applicationId || getCurrentApplicationId());
   } catch (error) {
-    console.error(`Error updating global application section ${section}:`, error);
   }
 };
 
@@ -458,9 +434,7 @@ export const saveApplicationMetadata = (applicationId, metadata) => {
       ...metadata
     };
     localStorage.setItem(key, JSON.stringify(metadataToSave));
-    console.log('💾 [APPLICATION METADATA] Сохранено:', metadataToSave);
   } catch (error) {
-    console.error('Error saving application metadata:', error);
   }
 };
 
@@ -477,7 +451,6 @@ export const loadApplicationMetadata = (applicationId) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading application metadata:', error);
     return null;
   }
 };
@@ -534,7 +507,6 @@ export const getAllApplications = () => {
     
     return applications;
   } catch (error) {
-    console.error('Error getting all applications:', error);
     return [];
   }
 };
@@ -560,9 +532,7 @@ export const deleteApplication = (applicationId) => {
     // Удаляем все найденные ключи
     keysToRemove.forEach(key => localStorage.removeItem(key));
     
-    console.log(`🗑️ [APPLICATION] Удалена заявка ${applicationId}`);
   } catch (error) {
-    console.error('Error deleting application:', error);
   }
 };
 
@@ -573,9 +543,7 @@ export const deleteApplication = (applicationId) => {
 export const saveAccessToken = (token) => {
   try {
     localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
-    console.log('💾 [AUTH] Access token сохранен');
   } catch (error) {
-    console.error('Error saving access token:', error);
   }
 };
 
@@ -587,7 +555,6 @@ export const getAccessToken = () => {
   try {
     return localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   } catch (error) {
-    console.error('Error getting access token:', error);
     return null;
   }
 };
@@ -599,9 +566,7 @@ export const getAccessToken = () => {
 export const saveRefreshToken = (token) => {
   try {
     localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token);
-    console.log('💾 [AUTH] Refresh token сохранен');
   } catch (error) {
-    console.error('Error saving refresh token:', error);
   }
 };
 
@@ -613,7 +578,6 @@ export const getRefreshToken = () => {
   try {
     return localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   } catch (error) {
-    console.error('Error getting refresh token:', error);
     return null;
   }
 };
@@ -625,9 +589,7 @@ export const getRefreshToken = () => {
 export const saveUserLogin = (login) => {
   try {
     localStorage.setItem(STORAGE_KEYS.USER_LOGIN, login);
-    console.log('💾 [AUTH] Логин пользователя сохранен:', login);
   } catch (error) {
-    console.error('Error saving user login:', error);
   }
 };
 
@@ -639,7 +601,6 @@ export const getUserLogin = () => {
   try {
     return localStorage.getItem(STORAGE_KEYS.USER_LOGIN);
   } catch (error) {
-    console.error('Error getting user login:', error);
     return null;
   }
 };
@@ -655,9 +616,7 @@ export const clearTokens = () => {
     // Также очищаем кэшированную роль и хэш токена
     localStorage.removeItem('userRole');
     localStorage.removeItem('userRoleTokenHash');
-    console.log('🗑️ [AUTH] Токены, логин и кэш роли очищены');
   } catch (error) {
-    console.error('Error clearing tokens:', error);
   }
 };
 
@@ -673,7 +632,6 @@ export const decodeJWT = (token) => {
     // JWT формат: header.payload.signature
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('Invalid JWT format');
       return null;
     }
     
@@ -691,7 +649,6 @@ export const decodeJWT = (token) => {
     const decoded = atob(base64);
     return JSON.parse(decoded);
   } catch (error) {
-    console.error('Error decoding JWT token:', error);
     return null;
   }
 };
@@ -720,10 +677,8 @@ export const getUserRole = () => {
     }
     
     // Если логин не соответствует известным ролям, возвращаем null
-    console.warn('⚠️ [AUTH] Неизвестный логин для определения роли:', login);
     return null;
   } catch (error) {
-    console.error('Error getting user role:', error);
     return null;
   }
 };
@@ -746,9 +701,7 @@ export const saveApplicationDataByNumber = (applicationNumber, applicationId, al
       ...allData
     };
     localStorage.setItem(key, JSON.stringify(dataToSave));
-    console.log('💾 [APPLICATION DATA BY NUMBER] Сохранено для номера:', applicationNumber);
   } catch (error) {
-    console.error('Error saving application data by number:', error);
   }
 };
 
@@ -765,7 +718,6 @@ export const loadApplicationDataByNumber = (applicationNumber) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error loading application data by number:', error);
     return null;
   }
 };

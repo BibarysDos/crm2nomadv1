@@ -30,7 +30,6 @@ export const getPerson = async (phone, iin) => {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error fetching person data:', error);
     throw error;
   }
 };
@@ -49,7 +48,6 @@ export const formatDate = (isoDate) => {
     const year = date.getFullYear();
     return `${day}.${month}.${year}`;
   } catch (error) {
-    console.error('Error formatting date:', error);
     return '';
   }
 };

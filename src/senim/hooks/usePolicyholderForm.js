@@ -276,7 +276,6 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
                 setAutoModeState('initial');
             }
         } catch (error) {
-            console.error('Ошибка получения данных страхователя:', error);
             setErrorMessage('Ошибка получения данных. Попробуйте еще раз или введите данные вручную.');
             setIsLoading(false);
             setAutoModeState('initial');
@@ -310,17 +309,14 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
                             loadedContragentIdentifier
                         );
 
-                        console.log('📤 [HOOK] Сохранение контрагента:', contragentData);
                         const savedContragent = await updateContragent(contragentData, accessIdForAPI.trim(), token);
 
                         if (savedContragent?.id) {
                             setContragentId(savedContragent.id);
                         }
-                        console.log('✅ [HOOK] Контрагент сохранен');
                     }
                 }
             } catch (error) {
-                console.error('Ошибка сохранения:', error);
                 setErrorMessage('Ошибка сохранения данных');
                 return; // Не переходим дальше при ошибке
             }

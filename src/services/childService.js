@@ -43,7 +43,6 @@ export const getChildren = async (iin, phone) => {
     
     return [];
   } catch (error) {
-    console.error('Error fetching children data:', error);
     throw error;
   }
 };
@@ -62,7 +61,6 @@ export const formatDate = (isoDate) => {
     const year = date.getFullYear();
     return `${day}.${month}.${year}`;
   } catch (error) {
-    console.error('Error formatting date:', error);
     return '';
   }
 };

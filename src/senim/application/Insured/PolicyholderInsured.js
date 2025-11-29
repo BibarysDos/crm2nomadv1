@@ -45,6 +45,16 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
     }
   }, [savedData]);
 
+  // Отслеживаем изменения policyholderData и обновляем поля при необходимости
+  useEffect(() => {
+    // Когда policyholderData загружается или обновляется, 
+    // поля автоматически отображают его значения через renderInputField
+    // Этот эффект нужен для логирования или дополнительной обработки
+    if (policyholderData) {
+      // Данные автоматически подтягиваются через props в renderInputField
+    }
+  }, [policyholderData]);
+
   // Обработчики для формы
   const handleFieldChange = (fieldName, value) => {
     // Для "Страхователь является застрахованным" данные берутся из policyholderData
@@ -237,22 +247,22 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
             </div>
           ) : (
             <>
-              {renderInputField('iin', 'ИИН', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('telephone', 'Номер телефона', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('surname', 'Фамилия', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('name', 'Имя', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('patronymic', 'Отчество', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+              {renderInputField('iin', 'ИИН', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.iin)}
+              {renderInputField('telephone', 'Номер телефона', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.telephone)}
+              {renderInputField('surname', 'Фамилия', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.surname)}
+              {renderInputField('name', 'Имя', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.name)}
+              {renderInputField('patronymic', 'Отчество', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.patronymic)}
               {renderCalendarField('birthDate', 'Дата рождения', policyholderData.birthDate)}
               {renderDictionaryButton('gender', 'Пол', getDictionaryDisplayValue(policyholderData.gender), handleOpenGender, !!policyholderData.gender)}
               {renderDictionaryButton('economSecId', 'Код сектора экономики', getDictionaryDisplayValue(policyholderData.economSecId), handleOpenSectorCode, !!policyholderData.economSecId)}
               {renderDictionaryButton('countryId', 'Страна', getDictionaryDisplayValue(policyholderData.countryId), handleOpenCountry, !!policyholderData.countryId)}
               {renderDictionaryButton('district_nameru', 'Область', policyholderData.district_nameru || '', handleOpenRegion, !!policyholderData.district_nameru)}
-              {renderInputField('settlementName', 'Название населенного пункта', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('street', 'Улица', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('houseNumber', '№ дома', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
-              {renderInputField('apartmentNumber', '№ квартиры', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+              {renderInputField('settlementName', 'Название населенного пункта', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.settlementName)}
+              {renderInputField('street', 'Улица', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.street)}
+              {renderInputField('houseNumber', '№ дома', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.houseNumber)}
+              {renderInputField('apartmentNumber', '№ квартиры', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.apartmentNumber)}
               {renderDictionaryButton('vidDocId', 'Тип документа', getDictionaryDisplayValue(policyholderData.vidDocId), handleOpenDocType, !!policyholderData.vidDocId)}
-              {renderInputField('docNumber', 'Номер документа', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur)}
+              {renderInputField('docNumber', 'Номер документа', policyholderData, activeField, handleFieldChange, handleFieldClick, handleFieldBlur, false, !!policyholderData.docNumber)}
               {renderDictionaryButton('issuedBy', 'Кем выдано', getDictionaryDisplayValue(policyholderData.issuedBy), handleOpenIssuedBy, !!policyholderData.issuedBy)}
               {renderCalendarField('issueDate', 'Выдан от', policyholderData.issueDate)}
               {renderCalendarField('expiryDate', 'Действует до', policyholderData.expiryDate)}

@@ -633,7 +633,6 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
           childData: resolvedChildData
         });
       } catch (error) {
-        console.error('Ошибка сохранения застрахованного в API:', error);
         setErrorMessage(`Ошибка сохранения: ${error.message}`);
         return;
       }
