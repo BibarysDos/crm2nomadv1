@@ -321,7 +321,8 @@ const WithManager = ({
             </div>
           </div>
         </div>
-        {isYesAnswer && (() => {
+        {/* Показываем поле подробного ответа только в бланк-опроснике, не в декларации */}
+        {isYesAnswer && questionnaireData?.questionnaireTypeCode === 'questionnaire' && (() => {
           const isActive = activeDetailedField === questionId;
           const hasValue = !!detailedAnswer && String(detailedAnswer).trim() !== '';
           const labelText = questionNumber ? `Ответьте подробнее на «Вопрос ${questionNumber}»` : 'Ответьте подробнее';
@@ -477,7 +478,16 @@ const WithManager = ({
 
   // Обработчик сохранения
   const handleSave = async () => {
-    await handleSaveQuestionnaire();
+    try {
+      await handleSaveQuestionnaire();
+      // После успешного сохранения возвращаемся в заявку
+      if (onBack) {
+        onBack();
+      }
+    } catch (error) {
+      // Ошибка уже обработана в handleSaveQuestionnaire
+      // Не вызываем onBack при ошибке
+    }
   };
 
   // Обработчик открытия бланка

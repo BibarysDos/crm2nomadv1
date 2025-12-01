@@ -26,9 +26,18 @@ const WithoutManager = ({
 
   // Обработчик отправки анкеты клиенту
   const handleSendToClient = async () => {
-    // Здесь будет логика отправки анкеты клиенту
-    await handleSaveQuestionnaire();
-    alert('Анкета отправлена клиенту');
+    try {
+      // Здесь будет логика отправки анкеты клиенту
+      await handleSaveQuestionnaire();
+      alert('Анкета отправлена клиенту');
+      // После успешного сохранения возвращаемся в заявку
+      if (onBack) {
+        onBack();
+      }
+    } catch (error) {
+      // Ошибка уже обработана в handleSaveQuestionnaire
+      // Не вызываем onBack при ошибке
+    }
   };
 
   return (

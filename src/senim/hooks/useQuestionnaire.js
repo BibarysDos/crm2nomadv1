@@ -54,13 +54,13 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
 
   // Обновление ответа на вопрос
   const updateQuestionAnswer = (questionId, answerId, answerCode, answerName, answer = null, explanation = null, extraData = null) => {
-    const contragentId = insuredContragentId || clientContragentId;
+    // Используем только insuredContragentId
     setQuestionnaireData(prev => {
       // Если данных еще нет, создаем базовую структуру
       if (!prev) {
         return {
           questionnaireTypeCode: 'healthdeclaration',
-          contragentId: contragentId,
+          contragentId: insuredContragentId,
           contragentQuestionnaires: questionId ? [{
             questionId: questionId,
             answerId,
@@ -109,8 +109,8 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
 
   // Сохранение анкеты
   const handleSave = async () => {
-    const contragentId = insuredContragentId || clientContragentId;
-    if (!contragentId) {
+    // Используем только insuredContragentId
+    if (!insuredContragentId) {
       if (onSaveCallback) {
         onSaveCallback({});
       }
@@ -137,7 +137,7 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
         throw new Error('Токен авторизации не найден');
       }
 
-      const contragentId = insuredContragentId || clientContragentId;
+      const contragentId = insuredContragentId;
       
       if (questionnaireType === 'questionnaire') {
         // При сохранении бланк-опросника сначала сохраняем декларацию (если есть вопросы декларации)
@@ -230,7 +230,8 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
     setIsLoadingQuestionnaire(true);
     setHasLoadedQuestionnaire(false);
     
-    if (!clientContragentId && !insuredContragentId) {
+    // Используем только insuredContragentId
+    if (!insuredContragentId) {
       // Если нет contragentId, создаем пустую структуру
       setQuestionnaireData({
         questionnaireTypeCode: 'healthdeclaration',
@@ -247,7 +248,7 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       // Если нет taskId, создаем пустую структуру
       setQuestionnaireData({
         questionnaireTypeCode: 'healthdeclaration',
-        contragentId: clientContragentId || insuredContragentId,
+        contragentId: insuredContragentId,
         contragentQuestionnaires: []
       });
       setHasLoadedQuestionnaire(true);
@@ -262,15 +263,15 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
         throw new Error('Токен авторизации не найден');
       }
       
-      // Загружаем декларацию (healthdeclaration) для clientContragentId
+      // Загружаем декларацию (healthdeclaration) для insuredContragentId
       // API возвращает все вопросы (и декларации, и бланк-опросника) в одном ответе
       const promises = [];
       const promiseSources = []; // Запоминаем, какой запрос для какого contragentId
       
-      if (clientContragentId) {
+      if (insuredContragentId) {
         // Загружаем декларацию с типом healthdeclaration (но она может содержать и вопросы бланк-опросника)
-        promises.push(getQuestionnaire(clientContragentId, taskIdForGet, token, 'healthdeclaration'));
-        promiseSources.push('client');
+        promises.push(getQuestionnaire(insuredContragentId, taskIdForGet, token, 'healthdeclaration'));
+        promiseSources.push('insured');
       }
       
       const results = await Promise.allSettled(promises);
@@ -278,24 +279,24 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       // Обрабатываем результаты запросов - используем ВСЕ вопросы из ответа (и декларации, и бланк-опросника)
       const allQuestions = [];
       let baseQuestionnaire = null;
-      let clientQuestionnaire = null;
+      let insuredQuestionnaire = null;
       
       results.forEach((result, index) => {
         if (result.status === 'fulfilled' && result.value) {
           const questionnaire = result.value;
-          if (promiseSources[index] === 'client') {
-            clientQuestionnaire = questionnaire;
+          if (promiseSources[index] === 'insured') {
+            insuredQuestionnaire = questionnaire;
           }
         }
       });
       
-      // Используем clientQuestionnaire как базовый
+      // Используем insuredQuestionnaire как базовый
       // API возвращает все вопросы вместе (и декларации questionCode 1-21, и бланк-опросника questionCode 22-45)
-      if (clientQuestionnaire) {
-        baseQuestionnaire = clientQuestionnaire;
-        if (clientQuestionnaire.contragentQuestionnaires) {
+      if (insuredQuestionnaire) {
+        baseQuestionnaire = insuredQuestionnaire;
+        if (insuredQuestionnaire.contragentQuestionnaires) {
           // Используем ВСЕ вопросы из ответа (и декларации, и бланк-опросника)
-          clientQuestionnaire.contragentQuestionnaires.forEach(q => {
+          insuredQuestionnaire.contragentQuestionnaires.forEach(q => {
             if (!allQuestions.find(existing => existing.questionId === q.questionId)) {
               allQuestions.push(q);
             }
@@ -307,14 +308,14 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
         setQuestionnaireData({
           ...baseQuestionnaire,
           questionnaireTypeCode: 'healthdeclaration', // Устанавливаем тип декларации (по умолчанию показываем декларацию)
-          contragentId: clientContragentId || insuredContragentId,
+          contragentId: insuredContragentId,
           contragentQuestionnaires: allQuestions // Все вопросы (и декларации, и бланк-опросника)
         });
       } else {
         // Если анкеты нет, создаем пустую структуру для нового создания
         setQuestionnaireData({
           questionnaireTypeCode: 'healthdeclaration',
-          contragentId: clientContragentId || insuredContragentId,
+          contragentId: insuredContragentId,
           contragentQuestionnaires: []
         });
       }
@@ -325,14 +326,14 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       if (error.message && (error.message.includes('404') || error.message.includes('Not Found'))) {
         setQuestionnaireData({
           questionnaireTypeCode: 'healthdeclaration',
-          contragentId: clientContragentId || insuredContragentId,
+          contragentId: insuredContragentId,
           contragentQuestionnaires: []
         });
       } else {
         // Для других ошибок тоже создаем пустую структуру
         setQuestionnaireData({
           questionnaireTypeCode: 'healthdeclaration',
-          contragentId: clientContragentId || insuredContragentId,
+          contragentId: insuredContragentId,
           contragentQuestionnaires: []
         });
       }
@@ -346,8 +347,8 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
   const loadQuestionnaire = async () => {
     setIsLoadingQuestionnaire(true);
     
-    const contragentId = insuredContragentId || clientContragentId;
-    if (!contragentId) {
+    // Используем только insuredContragentId
+    if (!insuredContragentId) {
       setIsLoadingQuestionnaire(false);
       return null;
     }
@@ -384,7 +385,7 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       }
       
       // Загружаем бланк-опросник с типом questionnaire
-      const questionnaire = await getQuestionnaire(contragentId, taskIdForGet, token, 'questionnaire');
+      const questionnaire = await getQuestionnaire(insuredContragentId, taskIdForGet, token, 'questionnaire');
       
       if (questionnaire) {
         // Объединяем вопросы бланк-опросника с существующими данными
@@ -393,7 +394,7 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
             return {
               ...questionnaire,
               questionnaireTypeCode: 'questionnaire',
-              contragentId: contragentId
+              contragentId: insuredContragentId
             };
           }
           
