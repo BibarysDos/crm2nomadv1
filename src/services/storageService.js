@@ -608,6 +608,74 @@ export const getUserLogin = () => {
 /**
  * Очистить токены из localStorage
  */
+/**
+ * Обновить access token используя refresh token
+ * @returns {Promise<string>} Новый access token
+ */
+export const refreshAccessToken = async () => {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('Refresh token не найден');
+  }
+
+  try {
+    const response = await fetch('https://crm-identity.onrender.com/api/auth/refresh', {
+      method: 'POST',
+      mode: 'cors',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        RefreshToken: refreshToken
+      }),
+    });
+
+    const responseText = await response.text();
+    let responseData;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (parseError) {
+      responseData = { raw: responseText };
+    }
+
+    if (!response.ok || !responseData.accessToken) {
+      throw new Error(responseData.message || responseData.error || 'Ошибка обновления токена');
+    }
+
+    // Сохраняем новый токен
+    saveAccessToken(responseData.accessToken);
+    if (responseData.refreshToken) {
+      saveRefreshToken(responseData.refreshToken);
+    }
+
+    return responseData.accessToken;
+  } catch (error) {
+    // Если не удалось обновить токен, очищаем все и перенаправляем на авторизацию
+    handleUnauthorized();
+    throw error;
+  }
+};
+
+/**
+ * Обработка ошибки 401 (Unauthorized) - выход из системы и перенаправление на страницу авторизации
+ */
+export const handleUnauthorized = () => {
+  // Очищаем все данные
+  clearAllData();
+  
+  // Очищаем sessionStorage
+  sessionStorage.removeItem('currentView');
+  sessionStorage.removeItem('selectedProduct');
+  sessionStorage.removeItem('currentApplicationId');
+  
+  // Устанавливаем флаг для показа сообщения об устаревшей сессии
+  sessionStorage.setItem('sessionExpired', 'true');
+  
+  // Перенаправляем на страницу авторизации через перезагрузку страницы
+  // Это гарантирует, что App.js пересоздастся и проверит токен
+  window.location.reload();
+};
+
 export const clearTokens = () => {
   try {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);

@@ -12,6 +12,7 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
         pdl: false
     });
     const [autoModeState, setAutoModeState] = useState('initial'); // initial, request_sent, response_received, data_loaded
+    const [waitingSmsResponse, setWaitingSmsResponse] = useState(false); // Флаг для показа алерта про СМС при initial состоянии
     const [errorMessage, setErrorMessage] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingContragent, setIsLoadingContragent] = useState(true);
@@ -148,8 +149,7 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
             issuedBy: identityDoc.identityDocIssuerCode ? {
                 code: identityDoc.identityDocIssuerCode,
                 nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
-            } : '',
-            clientType: contragentData.clientType || contragentData.insuredType || ''
+            } : ''
         };
     };
 
@@ -248,9 +248,8 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
             return;
         }
         setErrorMessage(null);
+        // НЕ сбрасываем waitingSmsResponse здесь - он должен оставаться до получения результата
         setIsLoading(true);
-        // Первое нажатие — считаем, что запрос ушёл (СМС и т.п.)
-        setAutoModeState('request_sent');
 
         try {
             // Очищаем номер телефона и ИИН от лишних символов
@@ -259,30 +258,64 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
 
             // Реальный запрос данных клиента
             const data = await getPerson(phone, iin);
-            if (data) {
-                const mappedData = mapApiDataToForm(data);
-                setPolicyholderData(prev => ({
-                    ...prev,
-                    ...mappedData,
-                    // Всегда сохраняем введённые ИИН и телефон,
-                    // даже если в ответе они пустые или в другом формате
-                    iin: prev.iin || mappedData.iin || '',
-                    telephone: prev.telephone || mappedData.telephone || ''
-                }));
-                // Данные получены — ждём, что пользователь нажмёт «Обновить»
-                setAutoModeState('response_received');
-            } else {
-                setErrorMessage('Данные не найдены');
-                setAutoModeState('initial');
+            
+            // Обработка ответа в зависимости от result
+            if (data && typeof data === 'object') {
+                // Проверяем наличие error (таймаут)
+                if (data.error && !data.success) {
+                    // Таймаут - запрос успешный, но надо повторно запросить
+                    setErrorMessage('Таймаут при обращении к внешнему сервису. Пожалуйста, нажмите "Запросить данные" еще раз.');
+                    setWaitingSmsResponse(false); // Сбрасываем флаг при таймауте
+                    setAutoModeState('initial');
+                    setIsLoading(false);
+                    return;
+                }
+                
+                // Проверяем result
+                if (data.result === 0) {
+                    // ИИН или номер телефона неверный
+                    setErrorMessage('ИИН или номер телефона неверный');
+                    setWaitingSmsResponse(false); // Сбрасываем флаг при ошибке
+                    setAutoModeState('initial');
+                    setIsLoading(false);
+                    return;
+                } else if (data.result === 1) {
+                    // Ждем ответ 511 - показываем алерт про СМС, но оставляем состояние initial
+                    setErrorMessage(null); // Очищаем ошибку, чтобы показать алерт про СМС
+                    setWaitingSmsResponse(true); // Устанавливаем флаг для показа алерта
+                    setAutoModeState('initial'); // Оставляем initial, чтобы кнопка была "Получить данные"
+                    setIsLoading(false);
+                    return;
+                } else if (data.result === 2) {
+                    // Успешно, данные есть - сразу показываем все поля
+                    setWaitingSmsResponse(false); // Сбрасываем флаг при успехе
+                    const mappedData = mapApiDataToForm(data);
+                    setPolicyholderData(prev => ({
+                        ...prev,
+                        ...mappedData,
+                        // Всегда сохраняем введённые ИИН и телефон,
+                        // даже если в ответе они пустые или в другом формате
+                        iin: prev.iin || mappedData.iin || '',
+                        telephone: prev.telephone || mappedData.telephone || ''
+                    }));
+                    // Сразу устанавливаем data_loaded, чтобы показать все поля без кнопки "Обновить"
+                    setAutoModeState('data_loaded');
+                    setIsLoading(false);
+                    return;
+                }
             }
+            
+            // Если формат ответа неожиданный
+                setErrorMessage('Неожиданный формат ответа. Попробуйте еще раз.');
+                setWaitingSmsResponse(false); // Сбрасываем флаг при ошибке
+                setAutoModeState('initial');
         } catch (error) {
+            // Ошибка сети или другая ошибка
             setErrorMessage('Ошибка получения данных. Попробуйте еще раз или введите данные вручную.');
-            setIsLoading(false);
             setAutoModeState('initial');
-            return;
+        } finally {
+            setIsLoading(false);
         }
-
-        setIsLoading(false);
     };
 
     // Логика "Обновить" — НЕ дергаем повторно getPerson, а просто переключаем форму
@@ -339,6 +372,7 @@ export const usePolicyholderForm = (applicationId, taskId, onSaveCallback, initi
         activeField,
         toggleStates,
         autoModeState,
+        waitingSmsResponse,
         errorMessage,
         isLoading,
         isLoadingContragent,

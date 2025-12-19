@@ -486,11 +486,30 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
   }, [applicationId, saveDataByNumber]);
 
   // Сохранение застрахованного в локальное хранилище и per-application кэш
-  const handleInsuredSave = (data) => {
+  const handleInsuredSave = async (data) => {
     setInsuredData(data);
     if (applicationId) {
       saveInsuredData(data, applicationId);
       saveDataByNumber();
+      
+      // Обновляем processDetails после сохранения застрахованного, чтобы insuredContragentId был доступен
+      try {
+        const token = getAccessToken();
+        if (token) {
+          const metadata = loadApplicationMetadata(applicationId);
+          const isTask =
+            metadata?.folderType === 'Task' || metadata?.folderType === 'Tasks' || metadata?.isTask === true;
+          const idForProcessInstance = isTask ? applicationId : metadata?.processId || applicationId;
+          
+          const details = await getProcessInstanceDetails(idForProcessInstance, token).catch(() => null);
+          if (details) {
+            setProcessDetails(details);
+            updateGlobalApplicationSection('ProcessDetails', details, applicationId);
+          }
+        }
+      } catch (error) {
+        // Игнорируем ошибки обновления processDetails, не критично
+      }
     }
   };
 

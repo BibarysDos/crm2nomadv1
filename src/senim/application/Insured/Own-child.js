@@ -5,6 +5,7 @@ import Country from '../../dictionary/Country';
 import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
+import ClientType from '../../dictionary/ClientType';
 import { getChildren, getChildFullName, formatDate as formatChildDate } from '../../../services/childService';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderAttachField, renderToggleButton } from './InsuredFormFields';
 import { saveOwnChildToApi } from '../../services/ownChildApiService';
@@ -43,7 +44,8 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
     settlementName: '',
     vidDocId: '',
     issuedBy: '',
-    residency: 'Резидент'
+    residency: 'Резидент',
+    clientType: ''
   });
 
   // Состояния для выбора ребенка
@@ -130,6 +132,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         const restoredCountryId = getDictionaryValue(childDataFromSaved.countryId);
         const restoredVidDocId = getDictionaryValue(childDataFromSaved.vidDocId);
         const restoredIssuedBy = getDictionaryValue(childDataFromSaved.issuedBy);
+        const restoredClientType = getDictionaryValue(childDataFromSaved.clientType);
 
         // Вычисляем финальные значения справочников
         const finalGender = getDictionaryOrPrev(restoredGender, undefined);
@@ -137,6 +140,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         const finalCountryId = getDictionaryOrPrev(restoredCountryId, undefined);
         const finalVidDocId = getDictionaryOrPrev(restoredVidDocId, undefined);
         const finalIssuedBy = getDictionaryOrPrev(restoredIssuedBy, undefined);
+        const finalClientType = getDictionaryOrPrev(restoredClientType, undefined);
 
         setChildData(prev => ({
           iin: getValue(childDataFromSaved.iin, prev.iin || ''),
@@ -157,6 +161,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
           countryId: finalCountryId !== undefined ? finalCountryId : prev.countryId || '',
           vidDocId: finalVidDocId !== undefined ? finalVidDocId : prev.vidDocId || '',
           issuedBy: finalIssuedBy !== undefined ? finalIssuedBy : prev.issuedBy || '',
+          clientType: finalClientType !== undefined ? finalClientType : prev.clientType || '',
           // Обычные строковые поля
           district_nameru: getValue(childDataFromSaved.district_nameru, prev.district_nameru || ''),
           settlementName: getValue(childDataFromSaved.settlementName, prev.settlementName || ''),
@@ -262,7 +267,8 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         settlementName: '',
         vidDocId: 'Свидетельство о рождении',
         issuedBy: selectedChild.zags_name_ru || '',
-        residency: 'Резидент'
+        residency: 'Резидент',
+        clientType: ''
       });
     } else if (currentView === 'filled' && manualChildInput && !selectedChild) {
       // Очищаем данные для ручного ввода нового ребенка
@@ -285,7 +291,8 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
         settlementName: '',
         vidDocId: 'Свидетельство о рождении',
         issuedBy: '',
-        residency: 'Резидент'
+        residency: 'Резидент',
+        clientType: ''
       });
     }
   }, [currentView, selectedChild, manualChildInput]);
@@ -386,6 +393,10 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   const handleOpenIssuedBy = () => {
     setPreviousDictionaryView(dictionaryView);
     setDictionaryView('issuedBy');
+  };
+  const handleOpenClientType = () => {
+    setPreviousDictionaryView(dictionaryView);
+    setDictionaryView('clientType');
   };
 
   const handleToggleManualChildInput = () => {
@@ -584,13 +595,16 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
     if (dictionaryView === 'issuedBy') {
       return <IssuedBy onBack={() => setDictionaryView(previousDictionaryView)} onSelect={(value) => handleDictionaryValueSelect('issuedBy', value)} />;
     }
+    if (dictionaryView === 'clientType') {
+      return <ClientType onBack={() => setDictionaryView(previousDictionaryView)} onSave={(value) => handleDictionaryValueSelect('clientType', value)} initialValue={childData.clientType} />;
+    }
   }
 
   // Рендеринг экрана выбора ребенка
   if (currentView === 'choose-child') {
     return (
-      <div data-layer="Selection child page" className="SelectionChildPage" style={{ width: 1512, height: 982, justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
-        <div data-layer="Menu" data-property-1="Menu three" className="Menu" style={{ width: 85, height: 982, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Selection child page" className="SelectionChildPage" style={{ width: 1512, minHeight: '100vh', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
+        <div data-layer="Menu" data-property-1="Menu three" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="Menu button" className="MenuButton" onClick={() => setCurrentView('main')} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
             <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 31, top: 32, position: 'absolute' }}>
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -599,7 +613,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
             </div>
           </div>
         </div>
-        <div data-layer="Selection child" className="SelectionChild" style={{ flex: '1 1 0', height: 982, background: 'white', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Selection child" className="SelectionChild" style={{ flex: '1 1 0', alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="SubHeader" data-type="Creating an order" className="Subheader" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
             <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
               <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Выбрать ребенка</div>
@@ -696,7 +710,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
   // Рендеринг финальной формы с данными
   if (currentView === 'filled') {
     return (
-      <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
         <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
             <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
@@ -706,7 +720,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
             </div>
           </div>
         </div>
-        <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
             <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
               <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Застрахованный - Свой ребенок</div>
@@ -817,6 +831,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
                     {renderDictionaryButton('issuedBy', 'Кем выдано', getDictionaryDisplayValue(childData.issuedBy), handleOpenIssuedBy, !!childData.issuedBy)}
                     {renderCalendarField('issueDate', 'Выдан от', childData.issueDate)}
                     {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
+                    {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(childData.clientType), handleOpenClientType, !!childData.clientType)}
                     {manualChildInput && (
                       <>
                         {renderAttachField('documentFile', 'Документ подтверждающий личность', childData.documentFile)}
@@ -835,7 +850,7 @@ const OwnChild = ({ onBack, onSave, applicationId, taskId, onOpenTypes, policyho
 
   // Основной вид - выбор ребенка
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
           <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>

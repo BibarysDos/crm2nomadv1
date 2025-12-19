@@ -12,7 +12,6 @@ import Country from '../dictionary/Country';
 import Region from '../dictionary/Region';
 import DocType from '../dictionary/DocType';
 import IssuedBy from '../dictionary/IssuedBy';
-import ClientType from '../dictionary/ClientType';
 
 const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails }) => {
   const [currentView, setCurrentView] = useState('main');
@@ -22,6 +21,7 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
     activeField,
     toggleStates,
     autoModeState,
+    waitingSmsResponse,
     errorMessage,
     isLoading,
     isLoadingContragent,
@@ -56,9 +56,6 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
   if (currentView === 'issuedBy') {
     return <IssuedBy onBack={handleBackToMain} onSelect={(value) => { handleDictionarySelect('issuedBy', value); handleBackToMain(); }} />;
   }
-  if (currentView === 'clientType') {
-    return <ClientType onBack={handleBackToMain} onSave={(value) => { handleDictionarySelect('clientType', value); handleBackToMain(); }} />;
-  }
 
   // Индикатор загрузки
   if (isLoadingContragent) {
@@ -73,7 +70,7 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
 
   const getHeaderButtonText = () => {
     if (toggleStates.manualInput) return 'Сохранить';
-    if (autoModeState === 'initial') return 'Отправить запрос';
+    if (autoModeState === 'initial') return 'Получить данные';
     if (autoModeState === 'request_sent' || autoModeState === 'response_received') return 'Обновить';
     if (autoModeState === 'data_loaded') return 'Сохранить';
     return 'Сохранить';
@@ -85,9 +82,10 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
       // После сохранения возвращаемся на экран заявки
       if (onBack) onBack();
     } else {
-      if (autoModeState === 'initial') {
+      if (autoModeState === 'initial' || autoModeState === 'request_sent') {
+        // При initial или request_sent (result === 1) снова вызываем запрос
         await handleSendRequest();
-      } else if (autoModeState === 'request_sent' || autoModeState === 'response_received') {
+      } else if (autoModeState === 'response_received') {
         await handleUpdate();
       } else if (autoModeState === 'data_loaded') {
         await handleSave();
@@ -103,7 +101,7 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
   };
 
   return (
-    <div data-layer="Policyholder data page" className="PolicyholderDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Policyholder data page" className="PolicyholderDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       <div data-layer="Menu" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
           <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
@@ -113,7 +111,7 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
           </div>
         </div>
       </div>
-      <div data-layer="Policyholder data" className="PolicyholderData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Policyholder data" className="PolicyholderData" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <div data-layer="SubHeader" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
           <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
             <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500' }}>Страхователь</div>
@@ -126,8 +124,8 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
         </div>
 
         {/* Alert */}
-        {(!toggleStates.manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received')) || errorMessage ? (
-          <div data-layer="Alert" className="Alert" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: errorMessage ? '#fff5f5' : 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+        {(!toggleStates.manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received' || waitingSmsResponse)) || errorMessage ? (
+          <div data-layer="Alert" className="Alert" style={{ alignSelf: 'stretch', height: 85, paddingRight: 20, background: errorMessage ? '#fff5f5' : 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
             <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
               {errorMessage ? (
                 <div data-svg-wrapper data-layer="Error" className="Error" style={{ left: 31, top: 32, position: 'absolute' }}>
@@ -156,9 +154,9 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
                 </div>
               )}
             </div>
-            <div className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: errorMessage ? '#d32f2f' : 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
-              {errorMessage || (autoModeState === 'request_sent' ? 'На номер будет отправлено СМС для получения согласия, клиенту необходимо ответить 511' : 'Нажмите на обновить')}
-            </div>
+                    <div className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: errorMessage ? '#d32f2f' : 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
+                      {errorMessage || (waitingSmsResponse || autoModeState === 'request_sent' ? 'На номер телефона будет отправлено СМС для получения согласия, клиенту необходимо ответить 511' : 'Нажмите на обновить, чтобы получить данные клиента')}
+                    </div>
           </div>
         ) : null}
 
@@ -196,7 +194,6 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
               <CalendarField label="Действует до" value={policyholderData.expiryDate} onChange={(e) => handleFieldChange('expiryDate', e.target.value)} onBlur={() => handleFieldBlur('expiryDate')} isActive={activeField === 'expiryDate'} onActivate={() => handleFieldActivate('expiryDate')} />
 
               <ToggleButton label="Признак ПДЛ" isPressed={toggleStates.pdl} onClick={() => handleToggle('pdl')} />
-              <DictionarySelect label="Тип клиента" value={getDictionaryValue(policyholderData.clientType)} onClick={() => setCurrentView('clientType')} />
             </>
           ) : (
             <>
@@ -228,7 +225,6 @@ const Policyholder = ({ onBack, onSave, applicationId, taskId, processDetails })
                   <CalendarField label="Действует до" value={policyholderData.expiryDate} onChange={(e) => handleFieldChange('expiryDate', e.target.value)} onBlur={() => handleFieldBlur('expiryDate')} isActive={activeField === 'expiryDate'} onActivate={() => handleFieldActivate('expiryDate')} />
 
                   <ToggleButton label="Признак ПДЛ" isPressed={toggleStates.pdl} onClick={() => handleToggle('pdl')} />
-                  <DictionarySelect label="Тип клиента" value={getDictionaryValue(policyholderData.clientType)} onClick={() => setCurrentView('clientType')} />
                 </>
               )}
             </>

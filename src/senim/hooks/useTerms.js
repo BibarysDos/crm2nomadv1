@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { getAccessToken } from '../../services/storageService';
 import { getContract, updateContract, getPrograms, getProgramPaymentFrequencies } from '../../services/processService';
 
-export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => {
+export const useTerms = (applicationId, taskId, historyData, onSaveCallback, processDetails = null) => {
   const [contractId, setContractId] = useState(null);
   const [dictionaryValues, setDictionaryValues] = useState({
     insuranceProduct: '',
@@ -21,11 +21,16 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
 
   // Получаем последнюю задачу из истории для GET/PUT запросов
   const getLastTaskId = () => {
+    // Сначала проверяем переданный taskId
     if (taskId) return taskId;
+    // Затем ищем в истории процесса
     if (historyData?.items && historyData.items.length > 0) {
       const lastItem = historyData.items[historyData.items.length - 1];
-      return lastItem.taskId || applicationId;
+      // Используем taskId из истории, если есть, иначе id элемента истории
+      if (lastItem.taskId) return lastItem.taskId;
+      if (lastItem.id) return lastItem.id;
     }
+    // В крайнем случае используем applicationId
     return applicationId;
   };
 
@@ -138,6 +143,8 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
         
         setHasLoadedContract(true);
       } catch (error) {
+        // Игнорируем ошибки загрузки контракта (404 - контракт может не существовать)
+        // Ошибки авторизации (401) обрабатываются в handleResponse
         setHasLoadedContract(true);
       } finally {
         setIsLoadingContract(false);
@@ -245,7 +252,15 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
     if (applicationId && dictionaryValues.insuranceProduct && typeof dictionaryValues.insuranceProduct === 'object') {
       try {
         const taskIdForPut = getLastTaskId();
+        console.log('Сохранение контракта - taskId:', taskIdForPut, 'applicationId:', applicationId, 'переданный taskId:', taskId);
         if (!taskIdForPut) {
+          alert('Не указан ID задачи для сохранения');
+          return;
+        }
+
+        const token = getAccessToken();
+        if (!token) {
+          alert('Токен авторизации не найден');
           return;
         }
 
@@ -254,6 +269,15 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
           ? dictionaryValues.frequencyPayment.paymentFrequencyCode
           : null;
         const amount = extractAmount();
+
+        // Получаем ProcessClientId страхователя из processDetails
+        let processClientId = null;
+        if (processDetails?.contragents && Array.isArray(processDetails.contragents)) {
+          const clientContragent = processDetails.contragents.find(c => c.contragentRoleCode === 'client');
+          if (clientContragent?.id) {
+            processClientId = clientContragent.id;
+          }
+        }
 
         const contractData = {
           id: contractId || null,
@@ -271,10 +295,11 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
           periodTypeCode: 'month',
           amountCurrency: null,
           premiumCurrency: null,
-          currencyRate: null
+          currencyRate: null,
+          ...(processClientId ? { ProcessClientId: processClientId } : {})
         };
 
-        const token = getAccessToken();
+        console.log('Отправка контракта:', JSON.stringify(contractData, null, 2));
         const savedContract = await updateContract(contractData, taskIdForPut, token);
         
         // Сохраняем полученный id контракта для последующих GET запросов
@@ -290,7 +315,12 @@ export const useTerms = (applicationId, taskId, historyData, onSaveCallback) => 
           });
         }
       } catch (error) {
-        alert(`Ошибка при сохранении контракта: ${error.message || 'Неизвестная ошибка'}`);
+        // Показываем все ошибки пользователю
+        const errorMessage = error.message || 'Неизвестная ошибка';
+        console.error('Ошибка сохранения контракта:', error);
+        console.error('Полный текст ошибки:', errorMessage);
+        alert(`Ошибка при сохранении контракта: ${errorMessage}`);
+        // Не пробрасываем ошибку дальше, чтобы не ломать UI
       }
     } else if (onSaveCallback) {
       onSaveCallback({

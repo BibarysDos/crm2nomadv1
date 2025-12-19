@@ -2,6 +2,8 @@
  * Сервис для получения данных о человеке через API
  */
 
+import { handleUnauthorized } from './storageService';
+
 const API_URL = 'https://person-child-dates.onrender.com/api/get-person';
 
 /**
@@ -22,6 +24,12 @@ export const getPerson = async (phone, iin) => {
         iin: iin
       })
     });
+
+    // Обработка 401 - выход из системы
+    if (response.status === 401) {
+      handleUnauthorized();
+      throw new Error('Сессия устарела. Необходимо войти в систему заново.');
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

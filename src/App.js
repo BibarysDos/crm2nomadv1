@@ -10,7 +10,8 @@ import {
   setCurrentApplicationId,
   saveApplicationMetadata,
   loadApplicationMetadata,
-  getAccessToken
+  getAccessToken,
+  handleUnauthorized
 } from './services/storageService';
 import {
   startStatementProcess,
@@ -248,6 +249,12 @@ function App() {
                 folderType: 'Statement'
               }),
             });
+
+            // Обработка 401 - выход из системы
+            if (listResponse.status === 401) {
+              handleUnauthorized();
+              return;
+            }
 
             if (listResponse.ok) {
               const listData = await listResponse.json();

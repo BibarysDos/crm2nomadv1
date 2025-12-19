@@ -10,6 +10,7 @@ import Country from '../../dictionary/Country';
 import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
+import ClientType from '../../dictionary/ClientType';
 import { useOtherChild } from '../../hooks/useOtherChild';
 import OtherChildChildrenSelect from './OtherChild/OtherChildChildrenSelect';
 
@@ -22,6 +23,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
     setDictionaryView,
     manualInput,
     autoModeState,
+    waitingSmsResponse,
     parentSectionCollapsed,
     setParentSectionCollapsed,
     isLoading,
@@ -57,8 +59,9 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
     handleOpenSectorCode,
     handleOpenCountry,
     handleOpenRegion,
-    // handleOpenDocType, // Не используется в этом компоненте
+    handleOpenDocType,
     handleOpenIssuedBy,
+    handleOpenClientType,
     handleChildFieldChange,
     handleChildFieldBlur,
     getDictionaryValue,
@@ -120,6 +123,15 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
         />
       );
     }
+    if (dictionaryView === 'clientType') {
+      return (
+        <ClientType
+          onBack={() => setDictionaryView(previousDictionaryView)}
+          onSave={(value) => handleDictionaryValueSelect('clientType', value)}
+          initialValue={childData.clientType}
+        />
+      );
+    }
   }
 
   if (currentView === 'choose-child') {
@@ -139,7 +151,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
   // Рендеринг финальной формы с данными
   if (currentView === 'filled') {
     return (
-      <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
         <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
             <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
@@ -149,7 +161,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
             </div>
           </div>
         </div>
-        <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
             <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
               <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Застрахованный - Иной ребенок</div>
@@ -355,6 +367,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                       <ToggleButton label="Адрес проживания совпадает с адресом родителя" isPressed={addressMatchesParent} onClick={handleToggleAddressMatchesParent} />
                       <DictionarySelect label="Страна" value={getDictionaryValue(childData.countryId)} onClick={handleOpenCountry} />
                       <DictionarySelect label="Область" value={getDictionaryValue(childData.district_nameru)} onClick={handleOpenRegion} />
+                      <DictionarySelect label="Тип документа" value={getDictionaryValue(childData.vidDocId)} onClick={handleOpenDocType} />
                       <InputField
                         label="Номер документа"
                         value={childData.docNumber}
@@ -372,14 +385,21 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                         isActive={activeChildField === 'issueDate'}
                         onActivate={() => handleChildFieldActivate('issueDate')}
                       />
-                      <CalendarField
-                        label="Действует до"
-                        value={childData.expiryDate}
-                        onChange={(e) => handleChildFieldChange('expiryDate', e.target.value)}
-                        onBlur={() => handleChildFieldBlur('expiryDate')}
-                        isActive={activeChildField === 'expiryDate'}
-                        onActivate={() => handleChildFieldActivate('expiryDate')}
-                      />
+                      {(() => {
+                        const docType = getDictionaryValue(childData.vidDocId);
+                        const isBirthCertificate = docType === 'Свидетельство о рождении' || childData.vidDocId === 'Свидетельство о рождении';
+                        return !isBirthCertificate && (
+                          <CalendarField
+                            label="Действует до"
+                            value={childData.expiryDate}
+                            onChange={(e) => handleChildFieldChange('expiryDate', e.target.value)}
+                            onBlur={() => handleChildFieldBlur('expiryDate')}
+                            isActive={activeChildField === 'expiryDate'}
+                            onActivate={() => handleChildFieldActivate('expiryDate')}
+                          />
+                        );
+                      })()}
+                      <DictionarySelect label="Тип клиента" value={getDictionaryValue(childData.clientType)} onClick={handleOpenClientType} />
                       <FileField label="Документ подтверждающий личность" value={childData.documentFile} onClick={() => { }} />
                       <FileField label="Документ подтверждающий опекунство" value="" onClick={() => { }} />
                     </>
@@ -432,6 +452,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                           <ToggleButton label="Адрес проживания совпадает с адресом родителя" isPressed={addressMatchesParent} onClick={handleToggleAddressMatchesParent} />
                           <DictionarySelect label="Страна" value={getDictionaryValue(childData.countryId)} onClick={handleOpenCountry} />
                           <DictionarySelect label="Область" value={getDictionaryValue(childData.district_nameru)} onClick={handleOpenRegion} />
+                          <DictionarySelect label="Тип документа" value={getDictionaryValue(childData.vidDocId)} onClick={handleOpenDocType} />
                           <InputField
                             label="Номер документа"
                             value={childData.docNumber}
@@ -449,15 +470,21 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                             isActive={activeChildField === 'issueDate'}
                             onActivate={() => handleChildFieldActivate('issueDate')}
                           />
-                          <CalendarField
-                            label="Действует до"
-                            value={childData.expiryDate}
-                            onChange={(e) => handleChildFieldChange('expiryDate', e.target.value)}
-                            onBlur={() => handleChildFieldBlur('expiryDate')}
-                            isActive={activeChildField === 'expiryDate'}
-                            onActivate={() => handleChildFieldActivate('expiryDate')}
-                          />
-                          <DictionarySelect label="Свидетельство о рождении" value={childData.birthCertificate} onClick={() => { }} showValue={false} />
+                          {(() => {
+                            const docType = getDictionaryValue(childData.vidDocId);
+                            const isBirthCertificate = docType === 'Свидетельство о рождении' || childData.vidDocId === 'Свидетельство о рождении';
+                            return !isBirthCertificate && (
+                              <CalendarField
+                                label="Действует до"
+                                value={childData.expiryDate}
+                                onChange={(e) => handleChildFieldChange('expiryDate', e.target.value)}
+                                onBlur={() => handleChildFieldBlur('expiryDate')}
+                                isActive={activeChildField === 'expiryDate'}
+                                onActivate={() => handleChildFieldActivate('expiryDate')}
+                              />
+                            );
+                          })()}
+                          <DictionarySelect label="Тип клиента" value={getDictionaryValue(childData.clientType)} onClick={handleOpenClientType} />
                         </>
                       )}
                       <FileField label="Документ подтверждающий личность" value={childData.documentFile} onClick={() => { }} />
@@ -479,7 +506,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
   const canSelectChild = manualInput || autoModeState === 'data_loaded';
 
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <div data-layer="Back button" className="BackButton" onClick={onBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
           <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
@@ -517,7 +544,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
           </div>
         </div>
         {/* Alert для уведомлений */}
-        {(!manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received')) || errorMessage ? (
+        {(!manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received' || waitingSmsResponse)) || errorMessage ? (
           <div data-layer="Alert" className="Alert" style={{ alignSelf: 'stretch', height: 85, paddingRight: 20, background: errorMessage ? '#fff5f5' : 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
             <div data-layer="Info container" className="InfoContainer" style={{ width: 85, height: 85, position: 'relative', background: 'white', overflow: 'hidden' }}>
               {errorMessage ? (
@@ -545,9 +572,9 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
             <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: errorMessage ? '#d32f2f' : 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
               {errorMessage
                 ? errorMessage
-                : autoModeState === 'request_sent'
-                  ? 'На номер будет отправлено СМС для получения согласия, клиенту необходимо ответить 511'
-                  : 'Нажмите на обновить, чтобы получить данные детей клиента'}
+                : (waitingSmsResponse || autoModeState === 'request_sent')
+                  ? 'На номер телефона будет отправлено СМС для получения согласия, клиенту необходимо ответить 511'
+                  : 'Нажмите на обновить, чтобы получить данные клиента'}
             </div>
           </div>
         ) : null}

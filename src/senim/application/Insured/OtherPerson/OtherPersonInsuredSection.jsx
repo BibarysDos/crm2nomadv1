@@ -4,6 +4,7 @@ import { renderInputField, renderDictionaryButton, renderCalendarField, renderAt
 const OtherPersonInsuredSection = ({
   manualInput,
   autoModeState,
+  waitingSmsResponse,
   errorMessage,
   isLoading,
   insuredData,
@@ -19,13 +20,14 @@ const OtherPersonInsuredSection = ({
   handleOpenRegion,
   handleOpenDocType,
   handleOpenIssuedBy,
+  handleOpenClientType,
   handleTogglePDL,
   handleToggleManualInput
 }) => {
   return (
     <>
       {/* Alert для уведомлений */}
-      {(!manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received')) || errorMessage ? (
+      {(!manualInput && (autoModeState === 'request_sent' || autoModeState === 'response_received' || waitingSmsResponse)) || errorMessage ? (
         <div
           data-layer="Alert"
           className="Alert"
@@ -91,9 +93,9 @@ const OtherPersonInsuredSection = ({
           >
             {errorMessage
               ? errorMessage
-              : autoModeState === 'request_sent'
-                ? 'На номер будет отправлено СМС для получения согласия, клиенту необходимо ответить 511'
-                : 'Нажмите на обновить, чтобы получить данные'}
+              : (waitingSmsResponse || autoModeState === 'request_sent')
+                ? 'На номер телефона будет отправлено СМС для получения согласия, клиенту необходимо ответить 511'
+                : 'Нажмите на обновить, чтобы получить данные клиента'}
           </div>
         </div>
       ) : null}
@@ -145,6 +147,7 @@ const OtherPersonInsuredSection = ({
                 {renderCalendarField('issueDate', 'Выдан от', insuredData.issueDate)}
                 {renderCalendarField('expiryDate', 'Действует до', insuredData.expiryDate)}
                 {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
+                {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(insuredData.clientType), handleOpenClientType, !!insuredData.clientType)}
               </>
             )}
           </>
@@ -179,6 +182,7 @@ const OtherPersonInsuredSection = ({
             {renderCalendarField('issueDate', 'Выдан от', insuredData.issueDate)}
             {renderCalendarField('expiryDate', 'Действует до', insuredData.expiryDate)}
             {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
+            {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(insuredData.clientType), handleOpenClientType, !!insuredData.clientType)}
           </>
         )}
       </div>

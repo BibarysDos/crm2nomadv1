@@ -17,29 +17,51 @@ const WithManager = ({
   const [showBlank, setShowBlank] = useState(false);
   const [answerAllNo, setAnswerAllNo] = useState(false);
 
-  // Проверяем, есть ли ответ "да" на любой вопрос декларации
+  // Проверяем ответ на вопрос декларации (questionCode 46 или 21)
+  // Если ответ "Нет" - показываем бланк-опросник
   useEffect(() => {
     if (questionnaireData?.contragentQuestionnaires) {
-      // Фильтруем вопросы декларации (questionCode от 1 до 21)
-      const declarationQuestions = questionnaireData.contragentQuestionnaires.filter(q => {
+      // Фильтруем вопрос декларации (questionCode 46 или 21 для обратной совместимости)
+      const declarationQuestion = questionnaireData.contragentQuestionnaires.find(q => {
         if (!q.questionCode) return false;
         const questionCodeNum = parseInt(q.questionCode);
-        return questionCodeNum >= 1 && questionCodeNum <= 21;
+        return questionCodeNum === 46 || questionCodeNum === 21;
       });
 
-      // Проверяем все вопросы декларации - если хотя бы на один ответ "да", показываем бланк-опросник
-      const hasYesAnswer = declarationQuestions.some(q => {
-        const isYes = q.answerCode === 'yes' ||
-          q.answerName === 'Да' ||
-          (q.answerName && q.answerName.toLowerCase().includes('да'));
-        return isYes;
-      });
-      
-      setShowBlank(hasYesAnswer);
+      // Если ответ "Нет" (не "Да"), показываем бланк-опросник
+      if (declarationQuestion) {
+        const isNo = declarationQuestion.answerCode === 'no' ||
+          declarationQuestion.answerName === 'Нет' ||
+          declarationQuestion.answerName === 'Жоқ. Келіспеймін / Нет. Не согласен' ||
+          (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('нет') && !declarationQuestion.answerName.toLowerCase().includes('согласен'));
+        
+        setShowBlank(isNo);
+      } else {
+        setShowBlank(false);
+      }
     } else {
       setShowBlank(false);
     }
   }, [questionnaireData]);
+
+  // Автоматически загружаем данные бланк-опросника, когда открыт экран бланк-опросника
+  useEffect(() => {
+    if (currentView === 'blank' && loadQuestionnaire) {
+      // Проверяем, есть ли уже вопросы бланк-опросника
+      const hasQuestionnaireQuestions = questionnaireData?.contragentQuestionnaires?.some(q => {
+        if (!q.questionCode) return false;
+        const questionCodeNum = parseInt(q.questionCode);
+        return questionCodeNum >= 22 && questionCodeNum <= 45;
+      });
+
+      // Если вопросов нет, загружаем их
+      if (!hasQuestionnaireQuestions) {
+        loadQuestionnaire().catch(error => {
+          console.error('Ошибка автоматической загрузки бланк-опросника:', error);
+        });
+      }
+    }
+  }, [currentView, questionnaireData, loadQuestionnaire]);
 
   // Обработчик открытия выбора ответа
   const handleOpenAnswerSelection = async (questionId, questionCode, answerTypeCode) => {
@@ -128,29 +150,30 @@ const WithManager = ({
   };
 
 
-  // Обработчик "Ответить на все вопросы нет"
+  // Обработчик "Ответить на все вопросы нет" - только для бланк-опросника
   const handleAnswerAllNo = async () => {
     const newValue = !answerAllNo;
     setAnswerAllNo(newValue);
 
+    // Эта функция работает только для бланк-опросника
+    const isQuestionnaire = questionnaireData?.questionnaireTypeCode === 'questionnaire';
+    if (!isQuestionnaire) {
+      return; // В декларации эта функция не используется
+    }
+
     if (newValue) {
-      // Получаем все вопросы текущего типа (декларация или бланк-опросник)
-      const isQuestionnaire = questionnaireData?.questionnaireTypeCode === 'questionnaire';
+      // Получаем все вопросы бланк-опросника
       const questions = (questionnaireData?.contragentQuestionnaires || []).filter(q => {
         if (!q.questionCode) return false;
         const questionCodeNum = parseInt(q.questionCode);
-        if (isQuestionnaire) {
           return questionCodeNum >= 22 && questionCodeNum <= 45;
-        } else {
-          return questionCodeNum >= 1 && questionCodeNum <= 21;
-        }
       });
 
       // Один раз загружаем ответ "Нет" из справочника (используем первый вопрос для получения справочника)
       const firstQuestion = questions.find(q => q.answerTypeCode !== 'num');
       let noAnswer = null;
       if (firstQuestion) {
-        const answers = await loadQuestionAnswers(firstQuestion.questionCode || '1');
+        const answers = await loadQuestionAnswers(firstQuestion.questionCode || '22');
         noAnswer = answers.find(a => a.code === 'no' || a.nameRu === 'Нет');
       }
 
@@ -168,15 +191,10 @@ const WithManager = ({
       });
     } else {
       // Если тогл выключен, очищаем все ответы
-      const isQuestionnaire = questionnaireData?.questionnaireTypeCode === 'questionnaire';
       const questions = (questionnaireData?.contragentQuestionnaires || []).filter(q => {
         if (!q.questionCode) return false;
         const questionCodeNum = parseInt(q.questionCode);
-        if (isQuestionnaire) {
           return questionCodeNum >= 22 && questionCodeNum <= 45;
-        } else {
-          return questionCodeNum >= 1 && questionCodeNum <= 21;
-        }
       });
 
       questions.forEach(question => {
@@ -422,12 +440,12 @@ const WithManager = ({
     // Если открыт бланк-опросник, возвращаемся к декларации
     if (currentView === 'blank') {
       // Восстанавливаем тип декларации через updateQuestionAnswer с extraData
-      // Находим первый вопрос декларации (questionCode от 1 до 21) для обновления типа
+      // Находим вопрос декларации (questionCode 46 или 21) для обновления типа
       if (questionnaireData && questionnaireData.contragentQuestionnaires) {
         const declarationQuestion = questionnaireData.contragentQuestionnaires.find(q => {
           if (!q.questionCode) return false;
           const questionCodeNum = parseInt(q.questionCode);
-          return questionCodeNum >= 1 && questionCodeNum <= 21;
+          return questionCodeNum === 46 || questionCodeNum === 21;
         });
         
         if (declarationQuestion) {
@@ -465,7 +483,7 @@ const WithManager = ({
 
   // Рендеринг меню
   const renderMenu = () => (
-    <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, height: 982, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{ width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
       <div data-layer="Back button" className="BackButton" onClick={handleBack} style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', cursor: 'pointer' }}>
         <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{ left: 32, top: 32, position: 'absolute' }}>
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -503,6 +521,17 @@ const WithManager = ({
     setCurrentView('blank');
   };
 
+  // Если нет данных, показываем загрузку
+  if (!questionnaireData) {
+    return (
+      <div style={{ width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'white' }}>
+        <div style={{ textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500' }}>
+          Загрузка данных анкеты...
+        </div>
+      </div>
+    );
+  }
+
   // Если открыт экран выбора ответа
   if (currentView === 'answerSelection') {
     const currentAnswer = questionnaireData?.contragentQuestionnaires?.find(q => q.questionId === currentQuestionId);
@@ -518,12 +547,21 @@ const WithManager = ({
     );
   }
 
-  // Если открыт бланк-опросник
+  // Если открыт бланк-опросник - возвращаем его сразу
   if (currentView === 'blank') {
+    // Вычисляем вопросы бланк-опросника для этого блока
+    const questionnaireQuestions = (questionnaireData?.contragentQuestionnaires || []).filter(q => {
+      if (!q.questionCode) return false;
+      const questionCodeNum = parseInt(q.questionCode);
+      return questionCodeNum >= 22 && questionCodeNum <= 45;
+    });
+
+    console.log('Рендерим блок бланк-опросника, currentView:', currentView, 'questionnaireQuestions.length:', questionnaireQuestions.length);
+
     return (
-      <div data-layer="Health questions page" className="HealthQuestionsPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Health questions page" className="HealthQuestionsPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
         {renderMenu()}
-        <div data-layer="Health questions" className="HealthQuestions" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+        <div data-layer="Health questions" className="HealthQuestions" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
           <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
             <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
               <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Бланк-опросник</div>
@@ -559,11 +597,17 @@ const WithManager = ({
             </div>
             {/* Вопросы бланк-опросника из API */}
             {(() => {
-              const questionnaireQuestions = (questionnaireData?.contragentQuestionnaires || []).filter(q => {
-                if (!q.questionCode) return false;
-                const questionCodeNum = parseInt(q.questionCode);
-                return questionCodeNum >= 22 && questionCodeNum <= 45;
-              }).sort((a, b) => {
+              // Если открыт бланк-опросник, но вопросы еще не загружены, показываем сообщение
+              if (questionnaireQuestions.length === 0) {
+                return (
+                  <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                    <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Вопросы бланк-опросника будут загружены</div>
+                  </div>
+                );
+              }
+
+              // Сортируем вопросы по order или questionCode
+              const sortedQuestions = questionnaireQuestions.sort((a, b) => {
                 if (a.order !== null && a.order !== undefined && b.order !== null && b.order !== undefined) {
                   return a.order - b.order;
                 }
@@ -573,19 +617,14 @@ const WithManager = ({
               });
 
               // Фильтруем числовые поля для правильной нумерации
-              const nonNumericQuestions = questionnaireQuestions.filter(q => q.answerTypeCode !== 'num');
+              const nonNumericQuestions = sortedQuestions.filter(q => q.answerTypeCode !== 'num');
 
-              return questionnaireQuestions.length > 0 ? (
-                questionnaireQuestions.map(question => {
+              // Отображаем вопросы
+              return sortedQuestions.map(question => {
                   // Находим индекс вопроса в списке без числовых полей для правильной нумерации
                   const questionIndex = question.answerTypeCode === 'num' ? null : nonNumericQuestions.findIndex(q => q.questionId === question.questionId);
                   return renderQuestion(question, questionIndex);
-                })
-              ) : (
-                <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
-                  <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Вопросы бланк-опросника будут загружены</div>
-                </div>
-              );
+              });
             })()}
           </div>
         </div>
@@ -593,45 +632,24 @@ const WithManager = ({
     );
   }
 
-  // Если нет данных, показываем загрузку
-  if (!questionnaireData) {
-    return (
-      <div style={{ width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'white' }}>
-        <div style={{ textAlign: 'center', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500' }}>
-          Загрузка данных анкеты...
-        </div>
-      </div>
-    );
-  }
-
-  // Фильтруем вопросы в зависимости от текущего типа анкеты
-  // Если это бланк-опросник (questionnaireTypeCode === 'questionnaire'), показываем вопросы бланк-опросника (questionCode от 22 до 45)
-  // Если это декларация (healthdeclaration), показываем вопросы декларации (questionCode от 1 до 21)
+  // Для декларации берем вопрос согласия (questionCode 46 или 21 для обратной совместимости)
   const isQuestionnaire = questionnaireData?.questionnaireTypeCode === 'questionnaire';
-
-  const declarationQuestions = (questionnaireData.contragentQuestionnaires || []).filter(q => {
-    if (!q.questionCode) {
-      // Если нет questionCode, включаем в декларацию (на случай, если придут вопросы без кода)
-      return !isQuestionnaire;
-    }
+  const declarationQuestion = isQuestionnaire ? null : (questionnaireData.contragentQuestionnaires || []).find(q => {
+    if (!q.questionCode) return false;
     const questionCodeNum = parseInt(q.questionCode);
-    if (isQuestionnaire) {
-      // Для бланк-опросника показываем вопросы с questionCode от 22 до 45
-      return questionCodeNum >= 22 && questionCodeNum <= 45;
-    } else {
-      // Для декларации показываем вопросы с questionCode от 1 до 21
-      return questionCodeNum >= 1 && questionCodeNum <= 21;
-    }
+    return questionCodeNum === 46 || questionCodeNum === 21;
   });
 
+  console.log('Рендерим основной return, currentView:', currentView, 'declarationQuestion:', declarationQuestion);
+
   return (
-    <div data-layer="Health questions page" className="HealthQuestionsPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Health questions page" className="HealthQuestionsPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       {renderMenu()}
       <div data-layer="Health questions" className="HealthQuestions" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <div data-layer="SubHeader" data-type="SectionApplication" className="Subheader" style={{ alignSelf: 'stretch', height: 85, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex' }}>
           <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
             <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
-              {questionnaireData?.questionnaireTypeCode === 'questionnaire' ? 'Бланк-опросник' : 'Декларация'}
+              {(questionnaireData?.questionnaireTypeCode === 'questionnaire' || currentView === 'blank') ? 'Бланк-опросник' : 'Декларация'}
             </div>
             <div data-layer="Button container" className="ButtonContainer" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
               {/* Скрываем кнопку "Сохранить" в декларации, если нужно заполнить бланк-опросник */}
@@ -644,7 +662,244 @@ const WithManager = ({
           </div>
         </div>
         <div data-layer="Filds list" className="FildsList" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
-          {/* Кнопка "Бланк-опросник" показывается только в декларации, не в самом бланк-опроснике */}
+          {/* Если открыт бланк-опросник, не показываем декларацию */}
+          {currentView !== 'blank' && (
+            <>
+              {/* Заголовок декларации */}
+              <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+                <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word' }}>Я ЗАЯВЛЯЮ О ПРАВДИВОСТИ И ДОСТОВЕРНОСТИ СЛЕДУЮЩИХ УТВЕРЖДЕНИЙ:</div>
+              </div>
+              
+              {/* Утверждения декларации */}
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не подвергаюсь опасности при выполнении своих профессиональных обязанностей, в том числе: работа на высоте / под водой / под землёй или работа со взрывоопасными / канцерогенными / токсичными веществами или радиацией.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не употребляю и никогда не употреблял наркотики.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не употребляю алкоголь в количестве более 20 мл в день в пересчёте на чистый спирт.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не выкуриваю ежедневно более 20 сигарет, включая сигары, электронные сигареты, никотиновые жевательные резинки / пластыри, трубочный / скрученный табак или другие заменители никотина.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю заболеваниями, вызванными СПИДом и другими заболеваниями, связанными с вирусом иммунодефицита человека.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не находился на больничном более 14 дней подряд, за исключением заболевания гриппом, и у меня нет инвалидности, связанной с состоянием здоровья, требующей сокращённого или неполного рабочего дня.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не подвергался хирургическому вмешательству или госпитализации в течение последних 12 месяцев (исключения составляют: аппендэктомия, стоматологические операции, геморрой, тонзиллэктомия, прерывание беременности, операция на венах).
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              У меня нет результатов анализов или онкологических заключений, требующих дальнейшего обследования (или лечения).
+            </div>
+          </div>
+          
+          {/* Раздел: ЗЛОКАЧЕСТВЕННЫЕ НОВООБРАЗОВАНИЯ */}
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word' }}>ЗЛОКАЧЕСТВЕННЫЕ НОВООБРАЗОВАНИЯ (РАК) И ТРАНСПЛАНТАЦИЯ КОСТНОГО МОЗГА:</div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю в настоящее время и не страдал в течение последних 10 лет онкологическими заболеваниями, включая предраковые опухоли, доброкачественные или злокачественные опухоли кожи (включая кисты, язвы или любые новообразования), опухоли щитовидной железы, доброкачественные или злокачественные опухоли мозга, поликистоз почек, карцинома и меланома in situ, рак крови / лейкемия; и у меня не был диагностирован вирус папилломы человека, вирус Эпштейна-Барра.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю заболеваниями крови и иммунной системы, включая: анемию, проблемы со свёртываемостью крови, нарушения иммунной системы; язвенный колит и болезнь Крона.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не подвергался хирургическому вмешательству и госпитализации для трансплантации костного мозга.
+            </div>
+          </div>
+          
+          {/* Раздел: ВСЕ ОПЕРАЦИИ НА СЕРДЦЕ */}
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word' }}>ВСЕ ОПЕРАЦИИ НА СЕРДЦЕ / ОПЕРАЦИИ НА СЕРДЦЕ / КАРДИОХИРУРГИЯ:</div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю в настоящее время и не страдал в течение последних 10 лет сердечно-сосудистыми заболеваниями, включая нарушения кровообращения (например, высокое кровяное давление), инсультом или заболеваниями сердца, включая боль в груди, шум в сердце, повышенное сердцебиение, стенокардию, инфаркт миокарда, атеросклероз, заболевания клапанов сердца, аритмию, кардиомиопатию, ишемическую болезнь сердца, сердечную недостаточность.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              У меня не было пересадки сердца.
+            </div>
+          </div>
+          
+          {/* Раздел: НЕЙРОХИРУРГИЯ */}
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word' }}>НЕЙРОХИРУРГИЯ / НЕЙРОХИРУРГИЧЕСКИЕ ОПЕРАЦИИ:</div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю в настоящее время и не страдал в течение последних 10 лет заболеваниями нервной системы и мозга, а также пороками развития, включая: эпилепсию, инсульт, паралич, рассеянный склероз, болезнь Гоше, атрофию мышц, ALS (боковой амиотрофический склероз), болезнь Паркинсона, деменцию, болезнь Альцгеймера, умственную отсталость, синдром Дауна, нарушения развития и/или роста.
+            </div>
+          </div>
+          
+          {/* Раздел: ТРАНСПЛАНТАЦИЯ ОРГАНОВ */}
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word' }}>ТРАНСПЛАНТАЦИЯ ОРГАНОВ:</div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не подвергался хирургическому вмешательству и госпитализации для трансплантации органов.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю заболеваниями печени, желчного пузыря и желчных протоков, включая: желтуху, гепатит, цирроз, жировой гепатоз печени, спленомегалию.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю заболеваниями почек и мочевыделительной системы, в том числе: простатитом, нефритом, почечной недостаточностью в настоящее время или в прошлом.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              Я не страдаю лёгочными и системными заболеваниями, в том числе: астмой (бронхитом), хронической обструктивной болезнью лёгких, эмфиземой, туберкулёзной инфекцией в настоящем или прошлом.
+            </div>
+          </div>
+          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', minHeight: 85, paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 8, display: 'inline-flex' }}>
+            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'flex-start', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', wordWrap: 'break-word', lineHeight: '1.6' }}>
+              У меня нет сахарного диабета.
+            </div>
+          </div>
+            </>
+          )}
+          
+          {/* Вопрос согласия с тоглом Да/Нет - два отдельных поля (показывается только в декларации) */}
+          {currentView !== 'blank' && declarationQuestion ? (
+            <React.Fragment>
+              {/* Первое поле - Вопрос */}
+              <div data-layer="InputContainerDictionaryButton" data-state="not_pressed" className="Inputcontainerdictionarybutton" style={{ alignSelf: 'stretch', paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex' }}>
+                <div data-layer="Text field container" className="TextFieldContainer" style={{ flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex' }}>
+                  <div data-layer="Label" className="Label" style={{ alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 14, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Вопрос</div>
+                  <div data-layer="Input text" className="InputText" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
+                    Согласен с Декларацией о состоянии здоровья и имеющихся рисках, подтверждаю, что все сведения, указанные в заявлении, являются достоверными и полными.
+                  </div>
+                </div>
+              </div>
+              {/* Второе поле - Ответ с тоглом */}
+              <div 
+                data-layer="InputContainerToggleButton" 
+                data-state={(() => {
+                  const isYes = declarationQuestion.answerCode === 'yes' || 
+                    declarationQuestion.answerName === 'Да' || 
+                    declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
+                    (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
+                  return isYes ? "pressed" : "not_pressed";
+                })()}
+                className="Inputcontainertogglebutton" 
+                onClick={async () => {
+                  const currentIsYes = declarationQuestion.answerCode === 'yes' || 
+                    declarationQuestion.answerName === 'Да' || 
+                    declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
+                    (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
+                  
+                  // Загружаем варианты ответов
+                  const answers = await loadQuestionAnswers(declarationQuestion.questionCode || '46');
+                  
+                  if (currentIsYes) {
+                    // Если сейчас "Да", переключаем на "Нет"
+                    const noAnswer = answers.find(a => 
+                      a.code === 'no' || 
+                      a.nameRu === 'Нет' || 
+                      a.nameRu === 'Жоқ. Келіспеймін / Нет. Не согласен' ||
+                      a.nameRu === 'Нет. Не согласен'
+                    );
+                    if (noAnswer) {
+                      updateQuestionAnswer(declarationQuestion.questionId, noAnswer.id, noAnswer.code, 'Нет. Не согласен');
+                    } else {
+                      updateQuestionAnswer(declarationQuestion.questionId, null, 'no', 'Нет. Не согласен');
+                    }
+                  } else {
+                    // Если сейчас "Нет" или нет ответа, переключаем на "Да"
+                    const yesAnswer = answers.find(a => 
+                      a.code === 'yes' || 
+                      a.nameRu === 'Да' || 
+                      a.nameRu === 'Иә. Келісемін / Да. Согласен' ||
+                      a.nameRu === 'Да. Согласен'
+                    );
+                    if (yesAnswer) {
+                      updateQuestionAnswer(declarationQuestion.questionId, yesAnswer.id, yesAnswer.code, 'Да. Согласен');
+                    } else {
+                      updateQuestionAnswer(declarationQuestion.questionId, null, 'yes', 'Да. Согласен');
+                    }
+                  }
+                }}
+                style={{ 
+                  alignSelf: 'stretch', 
+                  height: 85, 
+                  paddingLeft: 20, 
+                  background: 'white', 
+                  overflow: 'hidden', 
+                  borderBottom: '1px #F8E8E8 solid', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  gap: 10, 
+                  display: 'inline-flex', 
+                  cursor: 'pointer' 
+                }}
+              >
+                <div data-layer="Text field container" className="TextFieldContainer" style={{ flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex' }}>
+                  <div data-layer="Label" className="Label" style={{ alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 14, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Ответ</div>
+                  <div data-layer="Input text" className="InputText" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
+                    {(() => {
+                      const isYes = declarationQuestion.answerCode === 'yes' || 
+                        declarationQuestion.answerName === 'Да' || 
+                        declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
+                        declarationQuestion.answerName === 'Да. Согласен' ||
+                        (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
+                      return isYes ? 'Да. Согласен' : (declarationQuestion.answerId || declarationQuestion.answerCode ? 'Нет. Не согласен' : 'Не заполнено');
+                    })()}
+                  </div>
+                </div>
+                <div data-layer="Switch container" className="SwitchContainer" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
+                  <div data-svg-wrapper data-layer="tui-switches" className="TuiSwitches" style={{ left: 26, top: 35, position: 'absolute' }}>
+                    <svg width="32" height="16" viewBox="0 0 32 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect width="32" height="16" rx="8" fill={(() => {
+                        const isYes = declarationQuestion.answerCode === 'yes' || 
+                          declarationQuestion.answerName === 'Да' || 
+                          declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
+                          declarationQuestion.answerName === 'Да. Согласен' ||
+                          (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
+                        return isYes ? "black" : "#E0E0E0";
+                      })()} />
+                      <circle cx={(() => {
+                        const isYes = declarationQuestion.answerCode === 'yes' || 
+                          declarationQuestion.answerName === 'Да' || 
+                          declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
+                          declarationQuestion.answerName === 'Да. Согласен' ||
+                          (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
+                        return isYes ? "24" : "8";
+                      })()} cy="8" r="6" fill="white" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              {/* Кнопка "Бланк-опросник" показывается только если ответ "Нет" */}
           {showBlank && currentView !== 'blank' && questionnaireData?.questionnaireTypeCode !== 'questionnaire' && (
             <div data-layer="InputContainerDictionaryButton" data-state="not_pressed" className="Inputcontainerdictionarybutton" style={{ alignSelf: 'stretch', paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', display: 'inline-flex' }}>
               <div data-layer="Text field container" className="TextFieldContainer" style={{ flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex' }}>
@@ -660,37 +915,13 @@ const WithManager = ({
               </div>
             </div>
           )}
-          <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: '#F6F6F6', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
-            <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Я заявляю о правдивости и достоверности следующих утверждений</div>
-          </div>
-          {/* Тогл "Ответить на все вопросы нет" */}
-          <div data-layer="InputContainerToggleButton" data-state={answerAllNo ? "pressed" : "not_pressed"} className="Inputcontainertogglebutton" onClick={handleAnswerAllNo} style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer' }}>
-            <div data-layer="Text container" className="TextContainer" style={{ flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex' }}>
-              <div data-layer="LabelDiv" className="Labeldiv" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Ответить на все вопросы нет</div>
-            </div>
-            <div data-layer="Switch container" className="SwitchContainer" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
-              <div data-svg-wrapper data-layer="tui-switches" className="TuiSwitches" style={{ left: 26, top: 35, position: 'absolute' }}>
-                <svg width="32" height="16" viewBox="0 0 32 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect width="32" height="16" rx="8" fill={answerAllNo ? "black" : "#E0E0E0"} />
-                  <circle cx={answerAllNo ? "24" : "8"} cy="8" r="6" fill="white" />
-                </svg>
-              </div>
-            </div>
-          </div>
-          {declarationQuestions.length > 0 ? (
-            (() => {
-              // Фильтруем числовые поля для правильной нумерации в декларации
-              const nonNumericQuestions = declarationQuestions.filter(q => q.answerTypeCode !== 'num');
-              return declarationQuestions.map(question => {
-                // Находим индекс вопроса в списке без числовых полей для правильной нумерации
-                const questionIndex = question.answerTypeCode === 'num' ? null : nonNumericQuestions.findIndex(q => q.questionId === question.questionId);
-                return renderQuestion(question, questionIndex);
-              });
-            })()
+            </React.Fragment>
           ) : (
+            currentView !== 'blank' && (
             <div data-layer="MessageContainer" data-type="desktop" className="Messagecontainer" style={{ alignSelf: 'stretch', height: 85, paddingLeft: 20, paddingRight: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex' }}>
-              <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Вопросы декларации будут загружены после заполнения основных данных</div>
+                <div data-layer="Label" className="Label" style={{ flex: '1 1 0', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Вопрос декларации будет загружен после заполнения основных данных</div>
             </div>
+            )
           )}
         </div>
       </div>

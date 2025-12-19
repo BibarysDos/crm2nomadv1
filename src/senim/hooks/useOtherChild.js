@@ -27,6 +27,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
   // Состояния для формы родителя
   const [manualInput, setManualInput] = useState(false);
   const [autoModeState, setAutoModeState] = useState('initial'); // 'initial', 'request_sent', 'response_received'
+  const [waitingSmsResponse, setWaitingSmsResponse] = useState(false); // Флаг для показа алерта про СМС при initial состоянии
   const [apiResponseData, setApiResponseData] = useState(null);
   const [parentSectionCollapsed, setParentSectionCollapsed] = useState(false);
 
@@ -93,7 +94,8 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     settlementName: '',
     vidDocId: '',
     issuedBy: '',
-    residency: 'Резидент'
+    residency: 'Резидент',
+    clientType: ''
   });
 
   const [toggleStates, setToggleStates] = useState({
@@ -398,7 +400,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     }
 
     setErrorMessage(null);
-    setAutoModeState('request_sent');
+    // НЕ сбрасываем waitingSmsResponse здесь - он должен оставаться до получения результата
     setIsLoading(true);
 
     try {
@@ -406,11 +408,79 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
       const iin = parentData.iin.replace(/\D/g, '');
 
       const apiData = await getPerson(phone, iin);
-
-      setApiResponseData(apiData);
-      setAutoModeState('response_received');
+      
+      // Обработка ответа в зависимости от result
+      if (apiData && typeof apiData === 'object') {
+        // Проверяем наличие error (таймаут)
+        if (apiData.error && !apiData.success) {
+          // Таймаут - запрос успешный, но надо повторно запросить
+          setErrorMessage('Таймаут при обращении к внешнему сервису. Пожалуйста, нажмите "Запросить данные" еще раз.');
+          setWaitingSmsResponse(false); // Сбрасываем флаг при таймауте
+          setAutoModeState('initial');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Проверяем result
+        if (apiData.result === 0) {
+          // ИИН или номер телефона неверный
+          setErrorMessage('ИИН или номер телефона неверный');
+          setWaitingSmsResponse(false); // Сбрасываем флаг при ошибке
+          setAutoModeState('initial');
+          setIsLoading(false);
+          return;
+        } else if (apiData.result === 1) {
+          // Ждем ответ 511 - показываем алерт про СМС, но оставляем состояние initial
+          setErrorMessage(null); // Очищаем ошибку, чтобы показать алерт про СМС
+          setWaitingSmsResponse(true); // Устанавливаем флаг для показа алерта
+          setAutoModeState('initial'); // Оставляем initial, чтобы кнопка была "Получить данные"
+          setIsLoading(false);
+          return;
+        } else if (apiData.result === 2) {
+          // Успешно, данные есть - сразу показываем все поля
+          setWaitingSmsResponse(false); // Сбрасываем флаг при успехе
+          setApiResponseData(apiData);
+          
+          // Сразу применяем данные к форме
+          const mappedData = mapApiDataToForm(apiData);
+          setParentData(prev => ({
+            ...prev,
+            iin: prev.iin || mappedData.iin || '',
+            telephone: prev.telephone || mappedData.telephone || '',
+            name: mappedData.name !== undefined ? mappedData.name : prev.name,
+            surname: mappedData.surname !== undefined ? mappedData.surname : prev.surname,
+            patronymic: mappedData.patronymic !== undefined ? mappedData.patronymic : prev.patronymic,
+            street: mappedData.street !== undefined ? mappedData.street : prev.street,
+            houseNumber: mappedData.houseNumber !== undefined ? mappedData.houseNumber : prev.houseNumber,
+            apartmentNumber: mappedData.apartmentNumber !== undefined ? mappedData.apartmentNumber : prev.apartmentNumber,
+            docNumber: mappedData.docNumber !== undefined ? mappedData.docNumber : prev.docNumber,
+            birthDate: mappedData.birthDate !== undefined ? mappedData.birthDate : prev.birthDate,
+            issueDate: mappedData.issueDate !== undefined ? mappedData.issueDate : prev.issueDate,
+            expiryDate: mappedData.expiryDate !== undefined ? mappedData.expiryDate : prev.expiryDate,
+            gender: mappedData.gender !== undefined ? mappedData.gender : prev.gender,
+            countryId: mappedData.countryId !== undefined ? mappedData.countryId : prev.countryId,
+            district_nameru: mappedData.district_nameru !== undefined ? mappedData.district_nameru : prev.district_nameru,
+            settlementName: mappedData.settlementName !== undefined ? mappedData.settlementName : prev.settlementName,
+            economSecId: mappedData.economSecId !== undefined ? mappedData.economSecId : prev.economSecId,
+            vidDocId: mappedData.vidDocId !== undefined ? mappedData.vidDocId : prev.vidDocId,
+            issuedBy: mappedData.issuedBy !== undefined ? mappedData.issuedBy : prev.issuedBy
+          }));
+          
+          // Сразу устанавливаем data_loaded, чтобы показать все поля без кнопки "Обновить"
+          setAutoModeState('data_loaded');
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Если формат ответа неожиданный
+      setErrorMessage('Неожиданный формат ответа. Попробуйте еще раз.');
+      setWaitingSmsResponse(false); // Сбрасываем флаг при ошибке
+      setAutoModeState('initial');
     } catch (error) {
+      // Ошибка сети или другая ошибка
       setErrorMessage('Ошибка при получении данных. Попробуйте еще раз.');
+      setWaitingSmsResponse(false); // Сбрасываем флаг при ошибке
       setAutoModeState('initial');
     } finally {
       setIsLoading(false);
@@ -425,9 +495,6 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     }
 
     setErrorMessage(null);
-
-    const currentIin = parentData.iin;
-    const currentTelephone = parentData.telephone;
 
     const mappedData = mapApiDataToForm(apiResponseData);
 
@@ -455,16 +522,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     }));
 
     setAutoModeState('data_loaded');
-
-    const phoneClean = currentTelephone.replace(/\D/g, '');
-    const iinClean = currentIin.replace(/\D/g, '');
-    getChildren(iinClean, phoneClean)
-      .then(childrenData => {
-        setChildren(childrenData);
-      })
-      .catch(() => {
-        // ignore background load errors
-      });
+    // Убрали вызов getChildren - он должен вызываться только при нажатии на "Выбрать ребенка"
   };
 
   // --- Выбор ребенка ---
@@ -522,6 +580,10 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
   const handleOpenIssuedBy = () => {
     setPreviousDictionaryView(dictionaryView);
     setDictionaryView('issuedBy');
+  };
+  const handleOpenClientType = () => {
+    setPreviousDictionaryView(dictionaryView);
+    setDictionaryView('clientType');
   };
 
   const handleChildFieldClick = (fieldName) => {
@@ -675,6 +737,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     }
 
     if (autoModeState === 'initial' || autoModeState === 'request_sent') {
+      // При initial или request_sent (result === 1) снова вызываем запрос
       handleSendRequest();
       return;
     }
@@ -711,6 +774,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     previousParentDictionaryView,
     manualInput,
     autoModeState,
+    waitingSmsResponse,
     apiResponseData,
     parentSectionCollapsed,
     isLoading,
@@ -764,6 +828,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     handleOpenRegion,
     handleOpenDocType,
     handleOpenIssuedBy,
+    handleOpenClientType,
     handleChildFieldClick,
     handleChildFieldActivate,
     handleChildFieldChange,

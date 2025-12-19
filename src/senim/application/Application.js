@@ -142,10 +142,17 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   }
 
   if (currentView === 'questionary') {
-    // Получаем contragentId клиента и застрахованного из processDetails
+    // Получаем contragentId клиента и застрахованного
+    // Сначала проверяем insuredData (актуальные данные после сохранения), потом processDetails
     let clientContragentId = null;
     let insuredContragentId = null;
     
+    // Приоритет 1: Проверяем insuredData (данные после сохранения формы застрахованного)
+    if (insuredData?.fullData?.fullInsured?.id) {
+      insuredContragentId = insuredData.fullData.fullInsured.id;
+    }
+    
+    // Приоритет 2: Проверяем processDetails (данные из ProcessInstance)
     if (processDetails?.contragents) {
       const clientContragent = processDetails.contragents.find(c => c.contragentRoleCode === 'client');
       const insuredContragent = processDetails.contragents.find(c => c.contragentRoleCode === 'insured');
@@ -153,14 +160,10 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
       if (clientContragent?.id) {
         clientContragentId = clientContragent.id;
       }
-      if (insuredContragent?.id) {
+      // Используем processDetails только если не нашли в insuredData
+      if (!insuredContragentId && insuredContragent?.id) {
         insuredContragentId = insuredContragent.id;
       }
-    }
-    
-    // Fallback на insuredData, если не нашли в processDetails
-    if (!insuredContragentId && insuredData?.fullData?.fullInsured?.id) {
-      insuredContragentId = insuredData.fullData.fullInsured.id;
     }
     
     return (
@@ -203,8 +206,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   }
 
   return (
-    <div data-layer="Statements details" className="StatementsDetails" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-  <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, height: 982, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+    <div data-layer="Statements details" className="StatementsDetails" style={{width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex'}}>
+  <div data-layer="Menu" data-property-1="Menu one" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
     <div data-layer="Back button" className="BackButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid'}} onClick={handleBackToProduct}>
       <div data-svg-wrapper data-layer="Chewron left" className="ChewronLeft" style={{left: 32, top: 32, position: 'absolute'}}>
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">

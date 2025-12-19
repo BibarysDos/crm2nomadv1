@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { saveAccessToken, saveRefreshToken, getAccessToken, getRefreshToken, saveUserLogin } from './services/storageService';
+import React, { useState, useRef, useEffect } from 'react';
+import { saveAccessToken, saveRefreshToken, getAccessToken, getRefreshToken, saveUserLogin, handleUnauthorized } from './services/storageService';
 
 const Authorization = ({ onLogin }) => {
   const [login, setLogin] = useState('');
@@ -10,6 +10,15 @@ const Authorization = ({ onLogin }) => {
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const loginInputRef = useRef(null);
   const passwordInputRef = useRef(null);
+
+  // Проверяем, была ли сессия устаревшей
+  useEffect(() => {
+    const sessionExpired = sessionStorage.getItem('sessionExpired');
+    if (sessionExpired === 'true') {
+      setError('Сессия устарела. Пожалуйста, войдите в систему заново.');
+      sessionStorage.removeItem('sessionExpired');
+    }
+  }, []);
 
   // Функция для загрузки папок и списка заявлений после входа
   const loadStatementsAfterLogin = async (accessToken) => {
@@ -25,6 +34,12 @@ const Authorization = ({ onLogin }) => {
 
       // Сначала получаем папки
       const foldersResponse = await foldersPromise;
+
+      // Обработка 401 - выход из системы
+      if (foldersResponse.status === 401) {
+        handleUnauthorized();
+        return;
+      }
 
       if (!foldersResponse.ok) {
         console.error('Ошибка загрузки папок:', foldersResponse.status);
@@ -59,6 +74,12 @@ const Authorization = ({ onLogin }) => {
           folderType: folderType
         }),
       });
+
+      // Обработка 401 - выход из системы
+      if (statementsResponse.status === 401) {
+        handleUnauthorized();
+        return;
+      }
 
       if (!statementsResponse.ok) {
         console.error('Ошибка загрузки заявлений:', statementsResponse.status);

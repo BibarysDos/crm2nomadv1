@@ -5,6 +5,7 @@ import Country from '../../dictionary/Country';
 import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
+import ClientType from '../../dictionary/ClientType';
 import useOtherPerson from '../../hooks/useOtherPerson';
 import OtherPersonHeader from './OtherPerson/OtherPersonHeader';
 import OtherPersonInsuredSection from './OtherPerson/OtherPersonInsuredSection';
@@ -15,6 +16,7 @@ const OtherPerson = ({ onBack, onSave, applicationId, taskId, savedData, onOpenT
     previousDictionaryView,
     manualInput,
     autoModeState,
+    waitingSmsResponse,
     isLoading,
     errorMessage,
     insuredData,
@@ -32,6 +34,7 @@ const OtherPerson = ({ onBack, onSave, applicationId, taskId, savedData, onOpenT
     handleOpenRegion,
     handleOpenDocType,
     handleOpenIssuedBy,
+    handleOpenClientType,
     handleTogglePDL,
     handleToggleManualInput,
     getHeaderButtonText,
@@ -64,6 +67,9 @@ const OtherPerson = ({ onBack, onSave, applicationId, taskId, savedData, onOpenT
   if (dictionaryView === 'issuedBy') {
     return <IssuedBy onBack={() => setDictionaryView(previousDictionaryView)} onSelect={(value) => handleDictionaryValueSelect('issuedBy', value)} />;
   }
+  if (dictionaryView === 'clientType') {
+    return <ClientType onBack={() => setDictionaryView(previousDictionaryView)} onSave={(value) => handleDictionaryValueSelect('clientType', value)} initialValue={insuredData.clientType} />;
+  }
 
   // Рендеринг меню
   const renderMenu = () => (
@@ -80,36 +86,38 @@ const OtherPerson = ({ onBack, onSave, applicationId, taskId, savedData, onOpenT
 
   // Основной вид
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       {renderMenu()}
-      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         <OtherPersonHeader
           title="Застрахованный - Иное лицо"
           isLoading={isLoading}
           getHeaderButtonText={getHeaderButtonText}
           onHeaderButtonClick={handleHeaderButtonClick}
         />
-        <OtherPersonInsuredSection
-          manualInput={manualInput}
-          autoModeState={autoModeState}
-          errorMessage={errorMessage}
-          isLoading={isLoading}
-          insuredData={insuredData}
-          toggleStates={toggleStates}
-          activeField={activeField}
-          getDictionaryDisplayValue={getDictionaryDisplayValue}
-          handleFieldChange={handleFieldChange}
-          handleFieldClick={handleFieldClick}
-          handleFieldBlur={handleFieldBlur}
-          handleOpenGender={handleOpenGender}
-          handleOpenSectorCode={handleOpenSectorCode}
-          handleOpenCountry={handleOpenCountry}
-          handleOpenRegion={handleOpenRegion}
-          handleOpenDocType={handleOpenDocType}
-          handleOpenIssuedBy={handleOpenIssuedBy}
-          handleTogglePDL={handleTogglePDL}
-          handleToggleManualInput={handleToggleManualInput}
-        />
+            <OtherPersonInsuredSection
+              manualInput={manualInput}
+              autoModeState={autoModeState}
+              waitingSmsResponse={waitingSmsResponse}
+              errorMessage={errorMessage}
+              isLoading={isLoading}
+              insuredData={insuredData}
+              toggleStates={toggleStates}
+              activeField={activeField}
+              getDictionaryDisplayValue={getDictionaryDisplayValue}
+              handleFieldChange={handleFieldChange}
+              handleFieldClick={handleFieldClick}
+              handleFieldBlur={handleFieldBlur}
+              handleOpenGender={handleOpenGender}
+              handleOpenSectorCode={handleOpenSectorCode}
+              handleOpenCountry={handleOpenCountry}
+              handleOpenRegion={handleOpenRegion}
+              handleOpenDocType={handleOpenDocType}
+              handleOpenIssuedBy={handleOpenIssuedBy}
+              handleOpenClientType={handleOpenClientType}
+              handleTogglePDL={handleTogglePDL}
+              handleToggleManualInput={handleToggleManualInput}
+            />
       </div>
     </div>
   );

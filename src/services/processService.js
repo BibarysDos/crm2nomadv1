@@ -23,6 +23,10 @@ const handleResponse = async (response, defaultErrorMessage) => {
   }
 
   const errorText = await response.text();
+  // Логируем детали ошибки для отладки
+  if (process.env.NODE_ENV === 'development') {
+    console.error(`Ошибка ${response.status} ${defaultErrorMessage}:`, errorText);
+  }
   throw new Error(`${defaultErrorMessage}: ${response.status} ${errorText}`);
 };
 
@@ -323,6 +327,7 @@ export const updateContract = async (contractData, taskId, token) => {
   }
   const authToken = getTokenOrThrow(token);
 
+  // Используем формат с accessId в query параметре, как в Postman
   const url = `${STATEMENT_BASE_URL}/Contract?accessId=${encodeURIComponent(taskId)}`;
 
   const response = await fetch(url, {
@@ -472,6 +477,18 @@ export const getQuestionnaire = async (contragentId, accessId, token, questionna
 
   const url = `${STATEMENT_BASE_URL}/Questionnaire/${contragentId}/${questionnaireTypeCode}?accessId=${encodeURIComponent(accessId)}`;
   
+  // Логирование для отладки (только в development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Запрос анкеты:', {
+      url,
+      contragentId,
+      accessId,
+      questionnaireTypeCode,
+      hasToken: !!authToken,
+      tokenLength: authToken ? authToken.length : 0
+    });
+  }
+  
   const response = await fetch(url, {
     method: 'GET',
     mode: 'cors',
@@ -484,6 +501,19 @@ export const getQuestionnaire = async (contragentId, accessId, token, questionna
   // Если 404, возвращаем null вместо ошибки
   if (response.status === 404) {
     return null;
+  }
+
+  // Дополнительное логирование для 401
+  if (response.status === 401) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('401 Unauthorized при запросе анкеты:', {
+        url,
+        contragentId,
+        accessId,
+        questionnaireTypeCode,
+        hasToken: !!authToken
+      });
+    }
   }
 
   return handleResponse(response, 'Ошибка получения анкеты');
@@ -535,6 +565,17 @@ export const updateQuestionnaire = async (questionnaireData, accessId, token) =>
 
   const url = `${STATEMENT_BASE_URL}/Questionnaire?accessId=${encodeURIComponent(accessId)}`;
 
+  // Логирование для отладки
+  if (process.env.NODE_ENV === 'development') {
+    console.log('PUT запрос анкеты:', {
+      url,
+      accessId,
+      questionnaireTypeCode: questionnaireData.questionnaireTypeCode,
+      contragentId: questionnaireData.contragentId,
+      questionsCount: questionnaireData.contragentQuestionnaires?.length || 0
+    });
+  }
+
   const response = await fetch(url, {
     method: 'PUT',
     mode: 'cors',
@@ -545,10 +586,6 @@ export const updateQuestionnaire = async (questionnaireData, accessId, token) =>
     },
     body: JSON.stringify(questionnaireData),
   });
-
-  if (!response.ok && response.status === 401) {
-    throw new Error('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
-  }
 
   return handleResponse(response, 'Ошибка обновления анкеты');
 };

@@ -5,6 +5,7 @@ import Country from '../../dictionary/Country';
 import Region from '../../dictionary/Region';
 import DocType from '../../dictionary/DocType';
 import IssuedBy from '../../dictionary/IssuedBy';
+import ClientType from '../../dictionary/ClientType';
 import { renderInputField, renderDictionaryButton, renderCalendarField, renderToggleButton } from './InsuredFormFields';
 import { mapInsuredToContragent } from '../../services/contragentService';
 import { updateContragent } from '../../../services/processService';
@@ -121,6 +122,10 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
     setPreviousDictionaryView(dictionaryView);
     setDictionaryView('issuedBy');
   };
+  const handleOpenClientType = () => {
+    setPreviousDictionaryView(dictionaryView);
+    setDictionaryView('clientType');
+  };
 
   const handleTogglePDL = () => {
     setToggleStates(prev => ({
@@ -193,6 +198,9 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
   if (dictionaryView === 'issuedBy') {
     return <IssuedBy onBack={() => setDictionaryView(previousDictionaryView)} onSelect={(value) => handleDictionaryValueSelect('issuedBy', value)} />;
   }
+  if (dictionaryView === 'clientType') {
+    return <ClientType onBack={() => setDictionaryView(previousDictionaryView)} onSave={(value) => handleDictionaryValueSelect('clientType', value)} initialValue={policyholderData?.clientType} />;
+  }
 
   // Рендеринг меню
   const renderMenu = () => (
@@ -222,9 +230,9 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
 
   // Основной вид
   return (
-    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+    <div data-layer="Insured data page" className="InsuredDataPage" style={{ width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex' }}>
       {renderMenu()}
-      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
+      <div data-layer="Insured data" className="InsuredData" style={{ width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex' }}>
         {renderSubHeader('Застрахованный - Страхователь')}
         <div data-layer="Filds list" className="FildsList" style={{ alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex' }}>
           {!policyholderData ? (
@@ -267,6 +275,7 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
               {renderCalendarField('issueDate', 'Выдан от', policyholderData.issueDate)}
               {renderCalendarField('expiryDate', 'Действует до', policyholderData.expiryDate)}
               {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
+              {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(policyholderData.clientType), handleOpenClientType, !!policyholderData.clientType)}
             </>
           )}
         </div>

@@ -37,9 +37,9 @@ const History = ({ onBack, applicationId }) => {
   );
 
   return (
-    <div data-layer="History page" className="HistoryPage" style={{width: 1512, background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+    <div data-layer="History page" className="HistoryPage" style={{width: 1512, minHeight: '100vh', background: 'white', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex'}}>
       {renderMenu()}
-      <div data-layer="History content" className="HistoryContent" style={{width: 1427, overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+      <div data-layer="History content" className="HistoryContent" style={{width: 1427, alignSelf: 'stretch', overflow: 'hidden', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
         {renderSubHeader('История')}
         <div data-layer="History table wrapper" className="HistoryTableWrapper" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
           <div data-layer="History table head" className="HistoryTableHead" style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: '#FCFCFC', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex'}}>

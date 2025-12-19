@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllApplications, getAccessToken, loadApplicationMetadata, saveApplicationMetadata, loadApplicationDataByNumber } from './services/storageService';
+import { getAllApplications, getAccessToken, loadApplicationMetadata, saveApplicationMetadata, loadApplicationDataByNumber, handleUnauthorized } from './services/storageService';
 
 const PROCESS_TYPES = ['Все', 'Оформление', 'Изменение', 'Расторжение', 'Выплаты'];
 const PRODUCTS = ['Все', 'Сенiм'];
@@ -132,6 +132,12 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
         },
       });
 
+      // Обработка 401 - выход из системы
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Ошибка загрузки папок: ${response.status}`);
       }
@@ -244,6 +250,12 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
           folderType: folderType
         }),
       });
+
+      // Обработка 401 - выход из системы
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -626,8 +638,8 @@ const Statements = ({ onCreateApplication, onLogout, onOpenApplication }) => {
           animation: spin 1s linear infinite;
         }
       `}</style>
-      <div data-layer="Sections applications" className="SectionsApplications" style={{width: 1512, height: 1436, justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-      <div data-layer="Menu" data-property-1="Menu four" className="Menu" style={{width: 85, height: 1436, background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', display: 'inline-flex'}}>
+      <div data-layer="Sections applications" className="SectionsApplications" style={{width: 1512, minHeight: '100vh', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex'}}>
+      <div data-layer="Menu" data-property-1="Menu four" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', display: 'inline-flex'}}>
         <div data-layer="Sidebar" className="Sidebar" style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
           <div data-layer="Menu button" className="MenuButton" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid'}}>
             <div data-layer="360" style={{left: 27, top: 33, position: 'absolute', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>360</div>

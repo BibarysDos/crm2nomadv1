@@ -20,11 +20,13 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
   // Состояния навигации
   const [currentView, setCurrentView] = useState(null); // null означает, что нужно определить начальный view
   const [fillWithoutManager, setFillWithoutManager] = useState(false);
+  const [modeSelectedByUser, setModeSelectedByUser] = useState(false); // Флаг, что режим был выбран пользователем
 
   // При открытии компонента или изменении contragentId сразу вызываем GET
   useEffect(() => {
-    // Сбрасываем view при изменении contragentId
+    // Сбрасываем view и флаг выбора режима при изменении contragentId
     setCurrentView(null);
+    setModeSelectedByUser(false);
     
     const loadOnMount = async () => {
       if (!clientContragentId && !insuredContragentId) {
@@ -48,6 +50,11 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
 
   // Определяем начальный view после загрузки данных
   useEffect(() => {
+    // Если режим был выбран пользователем, не меняем view автоматически
+    if (modeSelectedByUser) {
+      return;
+    }
+
     if (isLoadingQuestionnaire) {
       return; // Ждем завершения загрузки
     }
@@ -64,10 +71,17 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
       const hasQuestions = questionnaireData?.contragentQuestionnaires && 
                            questionnaireData.contragentQuestionnaires.length > 0;
       
+      // Проверяем, есть ли хотя бы один ответ (да или нет) на вопросы
+      const hasAnyAnswer = hasQuestions && questionnaireData.contragentQuestionnaires.some(q => {
+        // Проверяем наличие ответа: answerCode или answerId не null
+        return !!(q.answerCode || q.answerId);
+      });
+      
       // Проверяем, есть ли сохраненный режим
       const savedMode = questionnaireData?.fillWithoutManager;
       
       if (savedMode !== undefined) {
+        // Если режим был сохранен ранее, используем его
         setFillWithoutManager(savedMode);
         if (savedMode) {
           setCurrentView('without-manager');
@@ -78,11 +92,11 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
           // Если нет вопросов, показываем выбор способа
           setCurrentView('mode-selection');
         }
-      } else if (hasQuestions) {
-        // Если есть вопросы, но нет сохраненного режима, открываем декларацию
+      } else if (hasAnyAnswer) {
+        // Если есть хотя бы один ответ (да или нет), открываем декларацию
         setCurrentView('questions');
       } else {
-        // Если нет вопросов, показываем выбор способа
+        // Если все ответы null, показываем выбор способа заполнения
         setCurrentView('mode-selection');
       }
     } else if (currentView === null) {
@@ -90,10 +104,11 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
       setCurrentView('mode-selection');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLoadedQuestionnaire, isLoadingQuestionnaire, questionnaireData, clientContragentId, insuredContragentId]);
+  }, [hasLoadedQuestionnaire, isLoadingQuestionnaire, questionnaireData, clientContragentId, insuredContragentId, modeSelectedByUser]);
 
   // Обработчик выбора режима заполнения
   const handleModeSelection = async (withoutManager) => {
+    setModeSelectedByUser(true); // Устанавливаем флаг, что режим выбран пользователем
     setFillWithoutManager(withoutManager);
     // Сохраняем выбор в questionnaireData
     if (questionnaireData) {
@@ -102,13 +117,13 @@ const Questionary = ({ onBack, onSave, applicationId, clientContragentId, insure
     if (withoutManager) {
       setCurrentView('without-manager');
     } else {
-      // При выборе "С менеджером" вызываем GET и открываем вопросы
-      // Сначала устанавливаем загрузку, чтобы показать индикатор
-      setCurrentView('questions'); // Переходим к вопросам, но покажем загрузку если нужно
+      // При выборе "С менеджером" вызываем GET и открываем декларацию
+      setCurrentView('questions'); // Сразу открываем декларацию
       try {
         await forceLoadQuestionnaire();
+        // После загрузки остаемся на экране декларации
       } catch (error) {
-        // В случае ошибки продолжаем работу
+        // В случае ошибки продолжаем работу, остаемся на экране декларации
       }
     }
   };

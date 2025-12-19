@@ -296,6 +296,10 @@ export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = nul
     };
     const insuredTypeName = insuredTypeNameMapping[insuredTypeCode] || '';
 
+    // Извлекаем relationCompanyCode и relationCompanyName из clientType
+    const relationCompanyCode = getCodeFromDict(data.clientType);
+    const relationCompanyName = getNameFromDict(data.clientType);
+
     // Формируем данные контрагента для застрахованного
     const contragentData = {
         id: '00000000-0000-0000-0000-000000000000',
@@ -315,7 +319,9 @@ export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = nul
             // Дублируем код в двух полях (как в ProcessInstance) и сразу пробрасываем имя
             InsuredTypeCode: insuredTypeCode,
             insuredTypeCode: insuredTypeCode,
-            ...(insuredTypeName ? { insuredTypeName } : {})
+            ...(insuredTypeName ? { insuredTypeName } : {}),
+            ...(relationCompanyCode ? { relationCompanyCode } : {}),
+            ...(relationCompanyName ? { relationCompanyName } : {})
         }
     };
 

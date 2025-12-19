@@ -104,6 +104,12 @@ export const mapContragentToInsuredForApplication = (contragentData) => {
           code: identityDoc.identityDocIssuerCode,
           nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
         }
+      : '',
+    clientType: contragentData.insuredDetails?.relationCompanyCode
+      ? {
+          code: contragentData.insuredDetails.relationCompanyCode,
+          nameRu: contragentData.insuredDetails.relationCompanyName || contragentData.insuredDetails.relationCompanyCode
+        }
       : ''
   };
 };

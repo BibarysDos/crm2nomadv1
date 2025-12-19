@@ -136,30 +136,26 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       if (!token) {
         throw new Error('Токен авторизации не найден');
       }
-
-      const contragentId = insuredContragentId;
       
       if (questionnaireType === 'questionnaire') {
-        // При сохранении бланк-опросника сначала сохраняем декларацию (если есть вопросы декларации)
-        const declarationQuestions = questionnaireData.contragentQuestionnaires.filter(q => {
-          if (!q.questionCode) return true; // Включаем вопросы без кода в декларацию
+        // При сохранении бланк-опросника сначала сохраняем декларацию (если есть вопрос декларации)
+        const declarationQuestion = questionnaireData.contragentQuestionnaires.find(q => {
+          if (!q.questionCode) return false;
           const questionCodeNum = parseInt(q.questionCode);
-          return questionCodeNum >= 1 && questionCodeNum <= 21;
+          return questionCodeNum === 46 || questionCodeNum === 21; // 46 - новый формат, 21 - для обратной совместимости
         });
 
-        if (declarationQuestions.length > 0) {
-          // Сначала сохраняем декларацию (только вопросы декларации)
-          const declarationQuestionsToSave = declarationQuestions.map(q => ({
-            questionId: q.questionId,
-            answerId: q.answerId || null,
-            answer: q.answer || null,
-            explanation: q.explanation || null
-          }));
-
+        if (declarationQuestion) {
+          // Сначала сохраняем декларацию (только последний вопрос)
           const declarationPayload = {
             questionnaireTypeCode: 'healthdeclaration',
-            contragentId: questionnaireData.contragentId || contragentId,
-            contragentQuestionnaires: declarationQuestionsToSave,
+            contragentId: insuredContragentId, // Используем только insuredContragentId
+            contragentQuestionnaires: [{
+              questionId: declarationQuestion.questionId,
+              answerId: declarationQuestion.answerId || null,
+              answer: declarationQuestion.answer || null,
+              explanation: declarationQuestion.explanation || null
+            }],
             fillWithoutManager: questionnaireData.fillWithoutManager || false
           };
           
@@ -182,35 +178,38 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
 
         const questionnairePayload = {
           questionnaireTypeCode: 'questionnaire',
-          contragentId: questionnaireData.contragentId || contragentId,
+          contragentId: insuredContragentId, // Используем только insuredContragentId
           contragentQuestionnaires: questionnaireQuestionsToSave,
           fillWithoutManager: questionnaireData.fillWithoutManager || false
         };
         
         await updateQuestionnaire(questionnairePayload, taskIdForPut, token);
       } else {
-        // Для декларации сохраняем только вопросы с questionCode от 1 до 21
-        const questionsToSave = questionnaireData.contragentQuestionnaires.filter(q => {
-          if (!q.questionCode) return true; // Включаем вопросы без кода в декларацию
+        // Для декларации сохраняем вопрос согласия (questionCode 46 или 21 для обратной совместимости)
+        const questionToSave = questionnaireData.contragentQuestionnaires.find(q => {
+          if (!q.questionCode) return false;
           const questionCodeNum = parseInt(q.questionCode);
-          return questionCodeNum >= 1 && questionCodeNum <= 21;
+          return questionCodeNum === 46 || questionCodeNum === 21; // 46 - новый формат, 21 - для обратной совместимости
         });
 
-        const allQuestions = questionsToSave.map(q => ({
-          questionId: q.questionId,
-          answerId: q.answerId || null,
-          answer: q.answer || null,
-          explanation: q.explanation || null
-        }));
-
-        const questionnairePayload = {
-          questionnaireTypeCode: 'healthdeclaration',
-          contragentId: questionnaireData.contragentId || contragentId,
-          contragentQuestionnaires: allQuestions,
-          fillWithoutManager: questionnaireData.fillWithoutManager || false
-        };
-        
-        await updateQuestionnaire(questionnairePayload, taskIdForPut, token);
+        if (questionToSave) {
+          const questionnairePayload = {
+            questionnaireTypeCode: 'healthdeclaration',
+            contragentId: insuredContragentId, // Используем только insuredContragentId
+            contragentQuestionnaires: [{
+              questionId: questionToSave.questionId,
+              answerId: questionToSave.answerId || null,
+              answer: questionToSave.answer || null,
+              explanation: questionToSave.explanation || null
+            }],
+            fillWithoutManager: questionnaireData.fillWithoutManager || false
+          };
+          
+          console.log('Сохранение декларации - taskId:', taskIdForPut, 'payload:', JSON.stringify(questionnairePayload, null, 2));
+          await updateQuestionnaire(questionnairePayload, taskIdForPut, token);
+        } else {
+          console.warn('Не найден вопрос декларации для сохранения (questionCode 46 или 21)');
+        }
       }
 
       if (onSaveCallback) {
@@ -270,7 +269,17 @@ export const useQuestionnaire = (clientContragentId, insuredContragentId, applic
       
       if (insuredContragentId) {
         // Загружаем декларацию с типом healthdeclaration (но она может содержать и вопросы бланк-опросника)
-        promises.push(getQuestionnaire(insuredContragentId, taskIdForGet, token, 'healthdeclaration'));
+        promises.push(
+          getQuestionnaire(insuredContragentId, taskIdForGet, token, 'healthdeclaration')
+            .catch(error => {
+              // Если 401, пробрасываем ошибку дальше для правильной обработки
+              if (error.message && error.message.includes('Сессия устарела')) {
+                throw error;
+              }
+              // Для других ошибок тоже пробрасываем
+              throw error;
+            })
+        );
         promiseSources.push('insured');
       }
       
