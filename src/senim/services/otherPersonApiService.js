@@ -1,4 +1,4 @@
-import { getAccessToken, loadApplicationMetadata } from '../../services/storageService';
+import { getAccessToken } from '../../services/storageService';
 import { updateContragent, getProcessInstanceDetails, getContragent, getStatementParticipants } from '../../services/processService';
 import { mapInsuredToContragent, mapLegalRepToContragent } from './contragentService';
 
@@ -84,10 +84,10 @@ export const saveOtherPersonToApi = async ({ applicationId, taskId, insuredData,
     if (existingInsuredId) {
       // Обновляем существующего insured
       try {
-        const existingContragent = await getContragent(existingInsuredId, accessIdForAPI, token);
+        await getContragent(existingInsuredId, accessIdForAPI, token);
 
-        const contragentData = mapInsuredToContragent(insuredData, 'other-person', null, parentId);
-        contragentData.id = existingInsuredId;
+        // Передаем existingId в mapInsuredToContragent, чтобы использовать существующий id
+        const contragentData = mapInsuredToContragent(insuredData, 'other-person', null, parentId, existingInsuredId);
 
         await updateContragent(contragentData, accessIdForAPI, token);
       } catch (error) {

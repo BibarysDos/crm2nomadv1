@@ -127,6 +127,35 @@ export const sendTaskDecision = async ({ taskId, decision, reasonId = null }, to
   return handleResponse(response, 'Ошибка отправки задачи');
 };
 
+/**
+ * Отправить задачу на подписание
+ * @param {string} taskId - ID задачи
+ * @param {string} token - Токен авторизации (опционально)
+ * @returns {Promise<Object>} Результат отправки на подписание
+ */
+export const sendTaskForSigning = async (taskId, token) => {
+  const authToken = getTokenOrThrow(token);
+
+  // Используем тот же endpoint, но с decision: true для подписания
+  // В будущем может быть отдельный endpoint для подписания
+  const response = await fetch(`${PROCESS_BASE_URL}/send-task`, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      taskId,
+      decision: true,
+      reasonId: null,
+    }),
+  });
+
+  return handleResponse(response, 'Ошибка отправки задачи на подписание');
+};
+
 export const getRejectReasons = async (taskId, token) => {
   const authToken = getTokenOrThrow(token);
 
@@ -423,6 +452,131 @@ export const updateContragent = async (contragentData, accessId, token) => {
   });
 
   return handleResponse(response, 'Ошибка обновления данных контрагента');
+};
+
+/**
+ * Обновить данные выгодоприобретателя
+ * @param {Object} beneficiaryData - Данные выгодоприобретателя
+ * @param {string} accessId - ID доступа (processInstanceId или taskId)
+ * @param {string} token - Токен авторизации (опционально, будет получен автоматически)
+ * @returns {Promise<Object>} Обновленные данные выгодоприобретателя
+ */
+export const updateBeneficiary = async (beneficiaryData, accessId, token) => {
+  if (!beneficiaryData) {
+    throw new Error('Данные выгодоприобретателя не указаны');
+  }
+  if (!accessId) {
+    throw new Error('accessId не указан');
+  }
+  const authToken = getTokenOrThrow(token);
+
+  // Beneficiary также является контрагентом с ролью 'beneficiary'
+  // Используем тот же endpoint, что и для других контрагентов
+  let accessIdParam = String(accessId).trim();
+
+  // Получаем последнюю задачу из истории для использования в качестве accessId
+  try {
+    const history = await getProcessHistory(accessIdParam, token);
+    if (Array.isArray(history) && history.length > 0) {
+      const last = history[history.length - 1];
+      if (last?.id) {
+        accessIdParam = String(last.id).trim();
+      }
+    }
+  } catch (e) {
+    // ignore history errors, fallback to исходный accessId
+  }
+
+  // Преобразуем данные beneficiary в формат контрагента
+  // Для создания нового контрагента используем пустой GUID, для обновления - существующий id
+  const contragentId = beneficiaryData.id || '00000000-0000-0000-0000-000000000000';
+  
+  // Определяем резидентность
+  const isResident = beneficiaryData.residencyType !== 'Нерезидент' && 
+                     beneficiaryData.residencyType !== 'не резидент' && 
+                     beneficiaryData.residencyType !== 'Не резидент';
+  const residentTypeCode = isResident ? 'resident' : 'nonResident';
+  
+  // Формируем адрес в правильном формате
+  const addressData = {};
+  if (beneficiaryData.country) {
+    addressData.countryCode = beneficiaryData.country;
+  } else {
+    addressData.countryCode = 'KZ'; // По умолчанию Казахстан
+  }
+  if (beneficiaryData.region) {
+    addressData.region = beneficiaryData.region;
+  }
+  if (beneficiaryData.street) {
+    addressData.street = beneficiaryData.street;
+  }
+  if (beneficiaryData.houseNumber) {
+    addressData.building = beneficiaryData.houseNumber;
+  }
+  if (beneficiaryData.apartmentNumber) {
+    addressData.flat = beneficiaryData.apartmentNumber;
+  }
+  
+  // Для нерезидентов БИН/ИИН не используется, используем название компании как identifier
+  // Для резидентов используем БИН если есть
+  const beneficiaryName = beneficiaryData.name || 'Madanes Advanced Healthcare Services Ltd.';
+  let identifier;
+  if (residentTypeCode === 'nonResident') {
+    // Для нерезидентов используем название компании как identifier (ограничиваем длину до 50 символов)
+    const nameIdentifier = beneficiaryData.identifier || beneficiaryName;
+    identifier = nameIdentifier.length > 50 ? nameIdentifier.substring(0, 50) : nameIdentifier;
+  } else {
+    // Для резидентов используем БИН
+    identifier = beneficiaryData.bin || beneficiaryData.identifier || beneficiaryName;
+  }
+  
+  const contragentData = {
+    id: contragentId,
+    identifier: identifier,
+    contragentTypeCode: 'legalentity', // Beneficiary обычно юридическое лицо
+    contragentRoleCode: 'beneficiary',
+    contragentRoleName: 'Бенефициар',
+    residentTypeCode: residentTypeCode,
+    longName: beneficiaryName
+  };
+  
+  // Добавляем адрес только если есть хотя бы одно поле кроме countryCode
+  const hasAddressFields = beneficiaryData.region || beneficiaryData.street || beneficiaryData.houseNumber || beneficiaryData.apartmentNumber;
+  if (hasAddressFields || addressData.countryCode) {
+    contragentData.address = addressData;
+  }
+  
+  // Добавляем detail с обязательными полями для юридических лиц
+  // Для нерезидентов-бенефициаров используем код '7' (Негосударственные нефинансовые организации)
+  const economicSectorCode = beneficiaryData.economicSectorCode || '7';
+  const economicSectorName = beneficiaryData.economicSectorName || 'Негосударственные нефинансовые организации';
+  // Для юридических лиц genderCode обязателен, используем значение по умолчанию
+  const genderCode = beneficiaryData.genderCode || 'male';
+  const genderName = beneficiaryData.genderName || 'Мужской';
+  contragentData.detail = {
+    economicSectorCode: economicSectorCode,
+    economicSectorName: economicSectorName,
+    genderCode: genderCode,
+    genderName: genderName
+  };
+  
+  console.log('Отправка beneficiary:', JSON.stringify(contragentData, null, 2));
+  console.log('URL:', `${STATEMENT_BASE_URL}/Contragent?accessId=${encodeURIComponent(accessIdParam)}`);
+
+  const url = `${STATEMENT_BASE_URL}/Contragent?accessId=${encodeURIComponent(accessIdParam)}`;
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    mode: 'cors',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(contragentData),
+  });
+
+  return handleResponse(response, 'Ошибка обновления данных выгодоприобретателя');
 };
 
 export const getStatementParticipants = async (accessId, token) => {

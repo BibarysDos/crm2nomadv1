@@ -13,9 +13,11 @@ const ApplicationHeader = ({
   isRejectingTask,
   userRole,
   processError,
+  isSigned,
   onBackToProduct,
   onClaimTask,
   onSendForApproval,
+  onOpenSigning,
   onRejectClick
 }) => {
   const metadata = applicationId ? loadApplicationMetadata(applicationId) : null;
@@ -106,7 +108,7 @@ const ApplicationHeader = ({
             justifyContent: 'flex-end',
             alignItems: 'center',
             display: 'flex',
-            gap: 16
+            gap: 0
           }}
         >
           {processError && (
@@ -173,30 +175,59 @@ const ApplicationHeader = ({
                   {isRejectingTask ? 'Отклоняем...' : 'Отклонить'}
                 </div>
               </div>
-              <div
-                data-layer="Send button for approval"
-                className="SendButtonForApproval"
-                style={{
-                  width: 388.5,
-                  height: 85,
-                  background: isDecisionDisabled ? '#666' : 'black',
-                  overflow: 'hidden',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  display: 'flex',
-                  cursor: isDecisionDisabled ? 'not-allowed' : 'pointer',
-                  opacity: isDecisionDisabled ? 0.7 : 1,
-                  color: 'white',
-                  fontFamily: 'Inter',
-                  fontSize: 16,
-                  fontWeight: 500
-                }}
-                onClick={isDecisionDisabled ? undefined : onSendForApproval}
-              >
-                <div style={{ flex: 1, textAlign: 'center' }}>
-                  {isSendingTask ? 'Отправляем...' : renderDecisionButtonLabel()}
+              {!isSigned ? (
+                <div
+                  data-layer="Send button for signing"
+                  className="SendButtonForSigning"
+                  style={{
+                    width: 388.5,
+                    height: 85,
+                    background: isDecisionDisabled ? '#666' : 'black',
+                    overflow: 'hidden',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    display: 'flex',
+                    cursor: isDecisionDisabled ? 'not-allowed' : 'pointer',
+                    opacity: isDecisionDisabled ? 0.7 : 1,
+                    color: 'white',
+                    fontFamily: 'Inter',
+                    fontSize: 16,
+                    fontWeight: 500
+                  }}
+                  onClick={isDecisionDisabled ? undefined : (onOpenSigning || (() => {
+                    console.warn('onOpenSigning не определен');
+                  }))}
+                >
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    Отправить на подписание
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div
+                  data-layer="Send button for approval"
+                  className="SendButtonForApproval"
+                  style={{
+                    width: 388.5,
+                    height: 85,
+                    background: isDecisionDisabled ? '#666' : 'black',
+                    overflow: 'hidden',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    display: 'flex',
+                    cursor: isDecisionDisabled ? 'not-allowed' : 'pointer',
+                    opacity: isDecisionDisabled ? 0.7 : 1,
+                    color: 'white',
+                    fontFamily: 'Inter',
+                    fontSize: 16,
+                    fontWeight: 500
+                  }}
+                  onClick={isDecisionDisabled ? undefined : onSendForApproval}
+                >
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    {isSendingTask ? 'Отправляем...' : renderDecisionButtonLabel()}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   loadApplicationHistory,
   loadApplicationBeneficiary,
+  saveApplicationBeneficiary,
   loadApplicationMetadata,
   saveApplicationMetadata,
   loadGlobalApplicationData,
@@ -22,7 +23,8 @@ import {
   getRejectReasons,
   getProcessInstanceDetails,
   getProcessHistory,
-  getContragent
+  getContragent,
+  updateBeneficiary
 } from '../../services/processService';
 import { mapContragentToInsuredForApplication, mapContragentToPolicyholderForApplication } from '../services/processFacade';
 import { normalizeHistoryData } from '../services/historyService';
@@ -51,6 +53,7 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
   const processStateRequestedRef = useRef(false);
   const [isLoadingApplicationData, setIsLoadingApplicationData] = useState(true);
   const [isLoadingInsured, setIsLoadingInsured] = useState(false);
+  const [isSigned, setIsSigned] = useState(false); // Флаг, что клиент подписал документ
 
   const normalizeTermsData = useCallback((data) => {
     if (!data) return null;
@@ -333,6 +336,54 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
                 saveInsuredData(displayData, applicationId);
               }
             }
+
+            // Обрабатываем beneficiary из ProcessInstance
+            const beneficiaryContragent = details.contragents.find((c) => c.contragentRoleCode === 'beneficiary');
+            if (beneficiaryContragent) {
+              // Загружаем данные beneficiary из ProcessInstance
+              const beneficiaryDataFromProcess = {
+                id: beneficiaryContragent.id || null,
+                residencyType: beneficiaryContragent.residencyType || 'Нерезидент',
+                name: beneficiaryContragent.name || 'Madanes Advanced Healthcare Services Ltd.',
+                country: beneficiaryContragent.address?.country || '',
+                region: beneficiaryContragent.address?.region || '',
+                street: beneficiaryContragent.address?.street || '',
+                houseNumber: beneficiaryContragent.address?.houseNumber || '',
+                apartmentNumber: beneficiaryContragent.address?.apartmentNumber || ''
+              };
+              setBeneficiaryData(beneficiaryDataFromProcess);
+              saveApplicationBeneficiary(beneficiaryDataFromProcess, applicationId);
+            } else if (selectedProduct === 'Сенiм') {
+              // Если продукт Сенiм и beneficiary нет в ProcessInstance, создаем его с данными по умолчанию
+              const defaultBeneficiary = {
+                residencyType: 'Нерезидент',
+                name: 'Madanes Advanced Healthcare Services Ltd.',
+                country: '',
+                region: '',
+                street: '',
+                houseNumber: '',
+                apartmentNumber: ''
+              };
+              
+              // Сохраняем в localStorage
+              setBeneficiaryData(defaultBeneficiary);
+              saveApplicationBeneficiary(defaultBeneficiary, applicationId);
+
+              // Отправляем PUT запрос для создания beneficiary в API
+              try {
+                let accessId = idForHistory;
+                if (Array.isArray(historyResponse) && historyResponse.length > 0) {
+                  const last = historyResponse[historyResponse.length - 1];
+                  if (last?.id) {
+                    accessId = String(last.id).trim();
+                  }
+                }
+                await updateBeneficiary(defaultBeneficiary, accessId, token);
+                console.log('Beneficiary создан в API с данными по умолчанию');
+              } catch (error) {
+                console.error('Ошибка создания beneficiary в API:', error);
+              }
+            }
           }
 
           // Заполняем карточку Условия данными из ProcessInstance.contract
@@ -423,7 +474,7 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
     return () => {
       isCancelled = true;
     };
-  }, [applicationId, normalizeTermsData]);
+  }, [applicationId, normalizeTermsData, selectedProduct]);
 
   useEffect(() => {
     const role = getUserRole();
@@ -607,14 +658,62 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
     }
   };
 
+  // Открыть экран выбора метода подписания
+  const handleOpenSigning = () => {
+    if (isDecisionDisabled) return;
+    setCurrentView('sign');
+  };
+
+  // Обработка выбора метода подписания
+  const handleSelectSigningMethod = async (method, isConfirmed = false) => {
+    if (!isConfirmed) {
+      // Если код еще не подтвержден, просто отправляем код (это происходит при нажатии "Отправить код")
+      // В этом случае ничего не делаем, просто ждем подтверждения
+      return;
+    }
+
+    // Если код подтвержден, завершаем подписание
+    // Не вызываем API, просто устанавливаем флаг и возвращаемся в заявку
+    try {
+      setProcessError(null);
+      
+      // Устанавливаем флаг, что клиент подписал
+      setIsSigned(true);
+      
+      // Возвращаемся на главный экран
+      setCurrentView('main');
+      
+      // Показываем alert, что клиент подписал
+      alert('Страхователь и застрахованный подписали заявление');
+      
+      return true;
+    } catch (error) {
+      setProcessError(error.message || 'Ошибка при подтверждении подписания');
+      return false;
+    }
+  };
+
+  // Отправить на согласование (отдельная кнопка)
   const handleSendForApproval = async () => {
     if (isDecisionDisabled) return false;
     try {
       setProcessError(null);
       setIsSendingTask(true);
       saveDataByNumber();
+      
+      // Отправляем только на согласование
       await sendTaskDecision({ taskId: currentTaskId, decision: true, reasonId: null });
-      alert('Задача отправлена на согласование');
+      
+      // Показываем alert, что клиент подписал
+      if (isSigned) {
+        alert('Страхователь и застрахованный подписали заявление. Задача отправлена на согласование');
+      } else {
+        alert('Задача отправлена на согласование');
+      }
+      
+      // Сбрасываем флаг подписания после отправки на согласование
+      setIsSigned(false);
+      
       return true;
     } catch (error) {
       setProcessError(error.message || 'Не удалось отправить задачу');
@@ -853,7 +952,8 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
       processError,
       userRole,
       isLoadingApplicationData,
-      isLoadingInsured
+      isLoadingInsured,
+      isSigned
     },
     derived: {
       currentTaskId,
@@ -870,6 +970,8 @@ export const useApplicationData = ({ applicationId, selectedProduct, processStat
     handlers: {
       handleClaimTask,
       handleSendForApproval,
+      handleOpenSigning,
+      handleSelectSigningMethod,
       handleRejectClick,
       handleConfirmReject,
       handleBackToMain,

@@ -1,4 +1,4 @@
-import { getAccessToken, loadApplicationMetadata } from '../../services/storageService';
+import { getAccessToken } from '../../services/storageService';
 import { updateContragent, getProcessInstanceDetails, getContragent } from '../../services/processService';
 import { mapInsuredToContragent, mapLegalRepToContragent } from './contragentService';
 
@@ -27,19 +27,12 @@ export const saveOwnChildToApi = async ({ applicationId, taskId, childData, pare
 
   try {
     // 2. Ищем в ProcessInstance страхователя (client), legalrep и существующего insured типа "own-child"
-    let clientId = null;
     let legalRepId = null;
     let existingInsuredId = null;
 
     try {
       const processDetails = await getProcessInstanceDetails(applicationId, token);
       if (processDetails?.contragents && Array.isArray(processDetails.contragents)) {
-        const clientContragent = processDetails.contragents.find(
-          (c) => c.contragentRoleCode === 'client'
-        );
-        if (clientContragent) {
-          clientId = clientContragent.id;
-        }
 
         const existingLegalRep = processDetails.contragents.find(
           (c) => c.contragentRoleCode === 'legalrep'
@@ -89,11 +82,12 @@ export const saveOwnChildToApi = async ({ applicationId, taskId, childData, pare
           : '9 - Домашние хозяйства/физическое лицо'
     };
 
-    const baseChildContragentData = mapInsuredToContragent(childDataWithSector, 'own-child', null, effectiveLegalRepId || null);
-
     // Если insured уже существует, обновляем его через GET+merge+PUT
     if (existingInsuredId) {
       const existingContragent = await getContragent(existingInsuredId, accessIdForAPI, token);
+      
+      // Передаем existingId в mapInsuredToContragent, чтобы использовать существующий id
+      const baseChildContragentData = mapInsuredToContragent(childDataWithSector, 'own-child', null, effectiveLegalRepId || null, existingInsuredId);
 
       const mergedContragentData = {
         ...existingContragent,
@@ -125,6 +119,9 @@ export const saveOwnChildToApi = async ({ applicationId, taskId, childData, pare
     }
 
     // 5. Пытаемся создать нового insured (own-child)
+    // Создаем данные для нового контрагента (без existingId)
+    const baseChildContragentData = mapInsuredToContragent(childDataWithSector, 'own-child', null, effectiveLegalRepId || null);
+    
     try {
       await updateContragent(baseChildContragentData, accessIdForAPI, token);
     } catch (saveError) {
@@ -140,30 +137,33 @@ export const saveOwnChildToApi = async ({ applicationId, taskId, childData, pare
               existingInsuredId = existingInsured.id;
 
               const existingContragent = await getContragent(existingInsuredId, accessIdForAPI, token);
+              
+              // Передаем existingId в mapInsuredToContragent, чтобы использовать существующий id
+              const baseChildContragentDataWithId = mapInsuredToContragent(childDataWithSector, 'own-child', null, effectiveLegalRepId || null, existingInsuredId);
 
               const mergedContragentData = {
                 ...existingContragent,
-                ...baseChildContragentData,
+                ...baseChildContragentDataWithId,
                 id: existingInsuredId,
-                identifier: baseChildContragentData.identifier || existingContragent.identifier,
-                contragentRoleCode: baseChildContragentData.contragentRoleCode || existingContragent.contragentRoleCode,
+                identifier: baseChildContragentDataWithId.identifier || existingContragent.identifier,
+                contragentRoleCode: baseChildContragentDataWithId.contragentRoleCode || existingContragent.contragentRoleCode,
                 address: {
                   ...existingContragent.address,
-                  ...baseChildContragentData.address
+                  ...baseChildContragentDataWithId.address
                 },
                 identityDoc: {
                   ...existingContragent.identityDoc,
-                  ...baseChildContragentData.identityDoc
+                  ...baseChildContragentDataWithId.identityDoc
                 },
                 detail: {
                   ...existingContragent.detail,
-                  ...baseChildContragentData.detail
+                  ...baseChildContragentDataWithId.detail
                 },
                 insuredDetails: {
                   ...existingContragent.insuredDetails,
-                  ...baseChildContragentData.insuredDetails
+                  ...baseChildContragentDataWithId.insuredDetails
                 },
-                legalRepresentative: baseChildContragentData.legalRepresentative || existingContragent.legalRepresentative
+                legalRepresentative: baseChildContragentDataWithId.legalRepresentative || existingContragent.legalRepresentative
               };
 
               await updateContragent(mergedContragentData, accessIdForAPI, token);

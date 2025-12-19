@@ -36,6 +36,9 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
 
   // Состояние ошибки
   const [errorMessage, setErrorMessage] = useState(null);
+  
+  // Состояние для отслеживания полей с ошибками валидации
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Состояние для ручного ввода данных ребенка
   const [manualChildInput, setManualChildInput] = useState(false);
@@ -554,6 +557,20 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
       ...prev,
       [fieldName]: value
     }));
+    
+    // Очищаем ошибку поля при выборе значения
+    if (fieldErrors[fieldName]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[fieldName];
+        return newErrors;
+      });
+      // Если больше нет ошибок, очищаем сообщение об ошибке
+      if (Object.keys(fieldErrors).length === 1) {
+        setErrorMessage(null);
+      }
+    }
+    
     setDictionaryView(previousDictionaryView);
   };
 
@@ -668,11 +685,31 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
   };
 
   const handleFinalSave = async () => {
+    console.log('handleFinalSave вызван в useOtherChild');
+    console.log('childData:', childData);
+    console.log('applicationId:', applicationId);
+    console.log('taskId:', taskId);
+    
+    // Очищаем предыдущие ошибки полей
+    setFieldErrors({});
+    
     // Валидация обязательных полей ребенка перед сохранением
+    const errors = {};
     if (!childData.gender) {
+      errors.gender = true;
+      console.log('Ошибка валидации: Пол не выбран');
+    }
+    
+    // Если есть ошибки, устанавливаем их и показываем сообщение
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       setErrorMessage('Пол застрахованного обязателен. Пожалуйста, выберите значение в поле "Пол".');
       return;
     }
+    
+    // Очищаем ошибки, если валидация прошла успешно
+    setFieldErrors({});
+    setErrorMessage(null);
 
     // Экономический сектор обязателен при создании прочей детализации.
     // Если у ребенка не выбран, подставляем сектор родителя или '9' (Домашние хозяйства/физическое лицо).
@@ -688,19 +725,25 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
 
     if (applicationId) {
       try {
+        console.log('Вызов saveOtherChildToApi с данными:', { applicationId, taskId, parentData, childData: resolvedChildData });
         await saveOtherChildToApi({
           applicationId,
           taskId,
           parentData,
           childData: resolvedChildData
         });
+        console.log('saveOtherChildToApi успешно выполнен');
       } catch (error) {
+        console.error('Ошибка в saveOtherChildToApi:', error);
         setErrorMessage(`Ошибка сохранения: ${error.message}`);
         return;
       }
+    } else {
+      console.log('applicationId не указан, пропускаем сохранение в API');
     }
 
     if (onSave) {
+      console.log('Вызов onSave');
       const dataToSave = {
         insuredType: 'other-child',
         parentData,
@@ -723,10 +766,15 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
       };
 
       onSave(displayData);
+    } else {
+      console.log('onSave не определен');
     }
 
     if (onBack) {
+      console.log('Вызов onBack');
       onBack();
+    } else {
+      console.log('onBack не определен');
     }
   };
 
@@ -779,6 +827,7 @@ export const useOtherChild = ({ applicationId, taskId, savedData, onSave, onBack
     parentSectionCollapsed,
     isLoading,
     errorMessage,
+    fieldErrors,
     manualChildInput,
     addressMatchesParent,
     parentData,

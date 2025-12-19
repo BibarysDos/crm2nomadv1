@@ -44,7 +44,7 @@ const Beneficiary = ({ onBack, applicationId }) => {
     }
   }, [applicationId]);
 
-  // Сохраняем данные при изменении
+  // Сохраняем данные при изменении в localStorage
   useEffect(() => {
     if (applicationId && beneficiaryData) {
       saveApplicationBeneficiary(beneficiaryData, applicationId);

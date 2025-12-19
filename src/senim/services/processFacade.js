@@ -105,10 +105,14 @@ export const mapContragentToInsuredForApplication = (contragentData) => {
           nameRu: identityDoc.identityDocIssuerName || identityDoc.identityDocIssuerCode
         }
       : '',
-    clientType: contragentData.insuredDetails?.relationCompanyCode
+    clientType: (contragentData.insuredDetails?.relationCompanyCode && contragentData.insuredDetails.relationCompanyCode !== null)
       ? {
           code: contragentData.insuredDetails.relationCompanyCode,
-          nameRu: contragentData.insuredDetails.relationCompanyName || contragentData.insuredDetails.relationCompanyCode
+          nameRu: contragentData.insuredDetails.relationCompanyName || 
+                 (contragentData.insuredDetails.relationCompanyCode === '1' ? 'Иные лица' :
+                  contragentData.insuredDetails.relationCompanyCode === '2' ? 'Работник' :
+                  contragentData.insuredDetails.relationCompanyCode === '3' ? 'Член семьи' :
+                  contragentData.insuredDetails.relationCompanyCode)
         }
       : ''
   };

@@ -4,7 +4,8 @@ export const DictionarySelect = ({
     label,
     value,
     onClick,
-    showValue = true
+    showValue = true,
+    hasError = false
 }) => {
     const hasValue = !!value && showValue;
     const dataState = hasValue ? "pressed" : "not_pressed";
@@ -19,9 +20,9 @@ export const DictionarySelect = ({
                 alignSelf: 'stretch',
                 height: 85,
                 paddingLeft: 20,
-                background: 'white',
+                background: hasError ? '#fff5f5' : 'white',
                 overflow: 'hidden',
-                borderBottom: '1px #F8E8E8 solid',
+                borderBottom: hasError ? '1px #d32f2f solid' : '1px #F8E8E8 solid',
                 justifyContent: 'flex-start',
                 alignItems: 'center',
                 display: 'inline-flex',
@@ -53,7 +54,7 @@ export const DictionarySelect = ({
                             justifyContent: 'center',
                             display: 'flex',
                             flexDirection: 'column',
-                            color: '#6B6D80',
+                            color: hasError ? '#d32f2f' : '#6B6D80',
                             fontSize: 14,
                             fontFamily: 'Inter',
                             fontWeight: '500',
@@ -102,7 +103,7 @@ export const DictionarySelect = ({
                             justifyContent: 'center',
                             display: 'flex',
                             flexDirection: 'column',
-                            color: 'black',
+                            color: hasError ? '#d32f2f' : 'black',
                             fontSize: 16,
                             fontFamily: 'Inter',
                             fontWeight: '500',

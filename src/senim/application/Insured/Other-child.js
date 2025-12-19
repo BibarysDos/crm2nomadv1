@@ -28,6 +28,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
     setParentSectionCollapsed,
     isLoading,
     errorMessage,
+    fieldErrors,
     manualChildInput,
     addressMatchesParent,
     parentData,
@@ -166,8 +167,25 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
             <div data-layer="Title" className="Title" style={{ flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex' }}>
               <div data-layer="Screen Title" className="ScreenTitle" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Застрахованный - Иной ребенок</div>
               <div data-layer="Button container" className="ButtonContainer" style={{ justifyContent: 'flex-start', alignItems: 'center', display: 'flex' }}>
-                <div data-layer="Send request button" data-state="pressed" className="SendRequestButton" onClick={handleFinalSave} style={{ width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer' }}>
-                  <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Сохранить</div>
+                <div 
+                  data-layer="Send request button" 
+                  data-state="pressed" 
+                  className="SendRequestButton" 
+                  onClick={(e) => {
+                    console.log('Кнопка Сохранить нажата в Other-child');
+                    console.log('handleFinalSave:', handleFinalSave);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (handleFinalSave && typeof handleFinalSave === 'function') {
+                      console.log('Вызываю handleFinalSave');
+                      handleFinalSave();
+                    } else {
+                      console.error('handleFinalSave is not defined or is not a function:', handleFinalSave);
+                    }
+                  }} 
+                  style={{ width: 390, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer', position: 'relative', zIndex: 10 }}
+                >
+                  <div data-layer="Button Text" className="ButtonText" style={{ flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word', pointerEvents: 'none' }}>Сохранить</div>
                 </div>
               </div>
             </div>
@@ -362,7 +380,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                         isActive={activeChildField === 'birthDate'}
                         onActivate={() => handleChildFieldActivate('birthDate')}
                       />
-                      <DictionarySelect label="Пол" value={getDictionaryValue(childData.gender)} onClick={handleOpenGender} />
+                      <DictionarySelect label="Пол" value={getDictionaryValue(childData.gender)} onClick={handleOpenGender} hasError={fieldErrors?.gender} />
                       <DictionarySelect label="Код сектора экономики" value={getDictionaryValue(childData.economSecId)} onClick={handleOpenSectorCode} />
                       <ToggleButton label="Адрес проживания совпадает с адресом родителя" isPressed={addressMatchesParent} onClick={handleToggleAddressMatchesParent} />
                       <DictionarySelect label="Страна" value={getDictionaryValue(childData.countryId)} onClick={handleOpenCountry} />
@@ -447,7 +465,7 @@ const OtherChild = ({ onBack, onSave, applicationId, taskId, policyholderData, s
                             isActive={activeChildField === 'birthDate'}
                             onActivate={() => handleChildFieldActivate('birthDate')}
                           />
-                          <DictionarySelect label="Пол" value={getDictionaryValue(childData.gender)} onClick={handleOpenGender} />
+                          <DictionarySelect label="Пол" value={getDictionaryValue(childData.gender)} onClick={handleOpenGender} hasError={fieldErrors?.gender} />
                           <DictionarySelect label="Код сектора экономики" value={getDictionaryValue(childData.economSecId)} onClick={handleOpenSectorCode} />
                           <ToggleButton label="Адрес проживания совпадает с адресом родителя" isPressed={addressMatchesParent} onClick={handleToggleAddressMatchesParent} />
                           <DictionarySelect label="Страна" value={getDictionaryValue(childData.countryId)} onClick={handleOpenCountry} />

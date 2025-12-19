@@ -6,6 +6,7 @@ import Terms from './Terms';
 import Questionary from './Questionary/Questionary';
 import History from './History';
 import RejectReason from './RejectReason';
+import Sign from './Sign';
 import ApplicationHeader from './layout/ApplicationHeader';
 import PolicyholderCard from './cards/PolicyholderCard';
 import InsuredCard from './cards/InsuredCard';
@@ -35,15 +36,16 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     processDetails,
     isClaimingTask,
     isSendingTask,
-    isRejectingTask,
-    reasons,
-    selectedReasonId,
-    reasonsLoading,
-    processError,
-    userRole,
-    isLoadingApplicationData,
-    isLoadingInsured
-  } = state;
+      isRejectingTask,
+      reasons,
+      selectedReasonId,
+      reasonsLoading,
+      processError,
+      userRole,
+      isLoadingApplicationData,
+      isLoadingInsured,
+      isSigned
+    } = state;
 
   const { currentTaskId, canClaimTaskNow, isDecisionDisabled } = derived;
 
@@ -54,6 +56,8 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
   const {
     handleClaimTask,
     handleSendForApproval,
+    handleOpenSigning,
+    handleSelectSigningMethod,
     handleRejectClick,
     handleConfirmReject,
     handleBackToMain,
@@ -180,6 +184,16 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
     );
   }
 
+  if (currentView === 'sign') {
+    return (
+      <Sign
+        onBack={handleBackToMain}
+        onSelectSigningMethod={handleSelectSigningMethod}
+        taskId={currentTaskId}
+      />
+    );
+  }
+
   if (currentView === 'reject') {
     return (
       <RejectReason
@@ -240,11 +254,83 @@ const Application = ({ selectedProduct, applicationId, onBack, processState, onP
       isRejectingTask={isRejectingTask}
       userRole={userRole}
       processError={processError}
+      isSigned={isSigned}
       onBackToProduct={handleBackToProduct}
       onClaimTask={handleClaimTask}
       onSendForApproval={handleSendForApprovalAndClose}
+      onOpenSigning={handleOpenSigning}
       onRejectClick={handleRejectClick}
     />
+    {isSigned && (
+      <div
+        data-layer="Alert"
+        className="Alert"
+        style={{
+          width: 1427,
+          height: 85,
+          paddingRight: 20,
+          background: 'white',
+          overflow: 'hidden',
+          borderBottom: '1px #F8E8E8 solid',
+          justifyContent: 'flex-start',
+          alignItems: 'center',
+          gap: 8,
+          display: 'inline-flex'
+        }}
+      >
+        <div
+          data-layer="Info container"
+          className="InfoContainer"
+          style={{
+            width: 85,
+            height: 85,
+            position: 'relative',
+            background: 'white',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            data-svg-wrapper
+            data-layer="Info"
+            className="Info"
+            style={{ left: 31, top: 32, position: 'absolute' }}
+          >
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g clipPath="url(#clip0_1053_19198)">
+                <path
+                  fillRule="evenodd"
+                  clipRule="evenodd"
+                  d="M0.916992 11.0013C0.916992 5.43229 5.43131 0.917969 11.0003 0.917969C16.5693 0.917969 21.0837 5.43229 21.0837 11.0013C21.0837 16.5703 16.5693 21.0846 11.0003 21.0846C5.43131 21.0846 0.916992 16.5703 0.916992 11.0013ZM11.0003 2.7513C6.44384 2.7513 2.75033 6.44481 2.75033 11.0013C2.75033 15.5578 6.44384 19.2513 11.0003 19.2513C15.5568 19.2513 19.2503 15.5578 19.2503 11.0013C19.2503 6.44481 15.5568 2.7513 11.0003 2.7513ZM10.0745 7.33464C10.0745 6.82837 10.4849 6.41797 10.9912 6.41797H11.0003C11.5066 6.41797 11.917 6.82837 11.917 7.33464C11.917 7.8409 11.5066 8.2513 11.0003 8.2513H10.9912C10.4849 8.2513 10.0745 7.8409 10.0745 7.33464ZM11.0003 10.0846C11.5066 10.0846 11.917 10.495 11.917 11.0013V14.668C11.917 15.1742 11.5066 15.5846 11.0003 15.5846C10.4941 15.5846 10.0837 15.1742 10.0837 14.668V11.0013C10.0837 10.495 10.4941 10.0846 11.0003 10.0846Z"
+                  fill="black"
+                />
+              </g>
+              <defs>
+                <clipPath id="clip0_1053_19198">
+                  <rect width="22" height="22" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+          </div>
+        </div>
+        <div
+          data-layer="Label"
+          className="Label"
+          style={{
+            flex: '1 1 0',
+            justifyContent: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            color: 'black',
+            fontSize: 16,
+            fontFamily: 'Inter',
+            fontWeight: '500',
+            wordWrap: 'break-word'
+          }}
+        >
+          Страхователь и застрахованный подписали заявление
+        </div>
+      </div>
+    )}
     <div data-layer="Application data section" className="ApplicationDataSection" style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
       <HistoryCard historyData={historyData} onOpen={handleViewFullHistory} />
       <PolicyholderCard policyholderData={policyholderData} onOpen={handleOpenPolicyholder} />

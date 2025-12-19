@@ -27,6 +27,19 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
   // Активное поле
   const [activeField, setActiveField] = useState(null);
 
+  // Локальное состояние для clientType, чтобы сохранять выбранное значение
+  const [localClientType, setLocalClientType] = useState(null);
+
+  // Для PolicyholderInsured clientType находится в данных застрахованного (savedData), а не в policyholderData
+  // Объединяем данные: берем clientType из savedData, остальное из policyholderData
+  const insuredData = savedData || {};
+  // Используем localClientType если он установлен, иначе берем из savedData или policyholderData
+  const displayData = {
+    ...policyholderData,
+    // clientType берем из локального состояния, если есть, иначе из данных застрахованного
+    clientType: localClientType || insuredData.clientType || policyholderData?.clientType
+  };
+
   // Логирование policyholderData для отладки убрано по требованию
 
   // Восстановление сохраненных данных при монтировании
@@ -44,7 +57,12 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
         setCurrentView(restored.currentView);
       }
     }
-  }, [savedData]);
+    
+    // Восстанавливаем clientType из savedData при загрузке
+    if (savedData?.clientType && !localClientType) {
+      setLocalClientType(savedData.clientType);
+    }
+  }, [savedData, localClientType]);
 
   // Отслеживаем изменения policyholderData и обновляем поля при необходимости
   useEffect(() => {
@@ -86,8 +104,10 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
 
   // Обработчики справочников
   const handleDictionaryValueSelect = (fieldName, value) => {
-    // Для "Страхователь является застрахованным" данные берутся из policyholderData
-    // Здесь можно добавить локальное состояние если нужно редактирование
+    // Сохраняем выбранное значение clientType в локальное состояние
+    if (fieldName === 'clientType') {
+      setLocalClientType(value);
+    }
     setDictionaryView(previousDictionaryView);
   };
 
@@ -143,8 +163,13 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
           const accessIdForAPI = applicationId;
 
           try {
+            // Получаем существующий id из savedData, если контрагент уже существует
+            const existingId = savedData?.fullData?.fullInsured?.id || null;
+            
+            // Используем displayData, который содержит clientType из savedData
             // Преобразуем данные страхователя в формат застрахованного с типом "страхователь является застрахованным"
-            const contragentData = mapInsuredToContragent(policyholderData, 'policyholder');
+            // Передаем existingId, чтобы использовать существующий id вместо пустого GUID
+            const contragentData = mapInsuredToContragent(displayData, 'policyholder', null, null, existingId);
             await updateContragent(contragentData, String(accessIdForAPI).trim(), token);
           } catch (error) {
           }
@@ -199,7 +224,7 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
     return <IssuedBy onBack={() => setDictionaryView(previousDictionaryView)} onSelect={(value) => handleDictionaryValueSelect('issuedBy', value)} />;
   }
   if (dictionaryView === 'clientType') {
-    return <ClientType onBack={() => setDictionaryView(previousDictionaryView)} onSave={(value) => handleDictionaryValueSelect('clientType', value)} initialValue={policyholderData?.clientType} />;
+    return <ClientType onBack={() => setDictionaryView(previousDictionaryView)} onSave={(value) => handleDictionaryValueSelect('clientType', value)} initialValue={displayData?.clientType} />;
   }
 
   // Рендеринг меню
@@ -275,7 +300,7 @@ const PolicyholderInsured = ({ onBack, policyholderData, onSave, applicationId, 
               {renderCalendarField('issueDate', 'Выдан от', policyholderData.issueDate)}
               {renderCalendarField('expiryDate', 'Действует до', policyholderData.expiryDate)}
               {renderToggleButton('Признак ПДЛ', toggleStates.pdl, handleTogglePDL)}
-              {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(policyholderData.clientType), handleOpenClientType, !!policyholderData.clientType)}
+              {renderDictionaryButton('clientType', 'Тип клиента', getDictionaryDisplayValue(displayData.clientType), handleOpenClientType, !!displayData.clientType)}
             </>
           )}
         </div>

@@ -1,6 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 const AnswerSelection = ({ questionAnswers, currentAnswer, onSelectAnswer, onBack }) => {
+  // Локальное состояние для временно выбранного ответа (до нажатия "Сохранить")
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+
+  // Инициализируем selectedAnswer из currentAnswer при монтировании
+  useEffect(() => {
+    if (currentAnswer) {
+      setSelectedAnswer({
+        id: currentAnswer.answerId,
+        code: currentAnswer.answerCode,
+        nameRu: currentAnswer.answerName
+      });
+    }
+  }, [currentAnswer]);
+
+  // Обработчик выбора ответа (только сохраняет во временное состояние)
+  const handleAnswerClick = (answerId, answerCode, answerName) => {
+    setSelectedAnswer({
+      id: answerId,
+      code: answerCode,
+      nameRu: answerName
+    });
+  };
+
+  // Обработчик сохранения - применяет выбранный ответ
+  const handleSave = () => {
+    if (selectedAnswer) {
+      onSelectAnswer(selectedAnswer.id, selectedAnswer.code, selectedAnswer.nameRu);
+    }
+    onBack();
+  };
+
   return (
     <div data-layer="List variants" className="ListVariants" style={{width: 1512, minHeight: '100vh', justifyContent: 'flex-start', alignItems: 'stretch', display: 'inline-flex'}}>
       <div data-layer="Menu" data-property-1="Menu three" className="Menu" style={{width: 85, alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderLeft: '1px #F8E8E8 solid', borderRight: '1px #F8E8E8 solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
@@ -16,7 +47,7 @@ const AnswerSelection = ({ questionAnswers, currentAnswer, onSelectAnswer, onBac
         <div data-layer="SubHeader" data-type="Creating an order" className="Subheader" style={{alignSelf: 'stretch', background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'space-between', alignItems: 'center', display: 'inline-flex'}}>
           <div data-layer="Title" className="Title" style={{flex: '1 1 0', height: 85, paddingLeft: 20, justifyContent: 'center', alignItems: 'center', gap: 10, display: 'flex'}}>
             <div data-layer="Screen Title" className="ScreenTitle" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Выберите вариант</div>
-            <div data-layer="ActionButtonWithoutRounding" data-state="pressed" className="Actionbuttonwithoutrounding" onClick={onBack} style={{width: 388, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
+            <div data-layer="ActionButtonWithoutRounding" data-state="pressed" className="Actionbuttonwithoutrounding" onClick={handleSave} style={{width: 388, height: 85, background: 'black', overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 8.98, display: 'flex', cursor: 'pointer'}}>
               <div data-layer="Button Text" className="ButtonText" style={{flex: '1 1 0', textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', textAlign: 'center', color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Сохранить</div>
             </div>
           </div>
@@ -24,14 +55,16 @@ const AnswerSelection = ({ questionAnswers, currentAnswer, onSelectAnswer, onBac
         <div data-layer="Fields List" className="FieldsList" style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
           {questionAnswers.length > 0 ? (
             questionAnswers.map((answer) => {
-              const isSelected = currentAnswer?.answerId === answer.id;
+              // Проверяем, выбран ли этот ответ во временном состоянии
+              const isSelected = selectedAnswer?.id === answer.id || 
+                                (selectedAnswer?.code === answer.code && !selectedAnswer?.id && !answer.id);
               return (
                 <div 
                   key={answer.id} 
                   data-layer="InputContainerRadioButton" 
                   data-state={isSelected ? 'pressed' : 'not_pressed'} 
                   className="Inputcontainerradiobutton" 
-                  onClick={() => onSelectAnswer(answer.id, answer.code, answer.nameRu)} 
+                  onClick={() => handleAnswerClick(answer.id, answer.code, answer.nameRu)} 
                   style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}
                 >
                   <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
@@ -58,12 +91,12 @@ const AnswerSelection = ({ questionAnswers, currentAnswer, onSelectAnswer, onBac
           ) : (
             // Fallback на "Да/Нет" если варианты ответов не загружены
             <>
-              <div data-layer="InputContainerRadioButton" data-state={currentAnswer?.answerCode === 'yes' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => onSelectAnswer(null, 'yes', 'Да')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
+              <div data-layer="InputContainerRadioButton" data-state={selectedAnswer?.code === 'yes' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleAnswerClick(null, 'yes', 'Да')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
                 <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
                   <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Да</div>
                 </div>
                 <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-                  {currentAnswer?.answerCode === 'yes' ? (
+                  {selectedAnswer?.code === 'yes' ? (
                     <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{left: 35, top: 36, position: 'absolute'}}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>
@@ -78,12 +111,12 @@ const AnswerSelection = ({ questionAnswers, currentAnswer, onSelectAnswer, onBac
                   )}
                 </div>
               </div>
-              <div data-layer="InputContainerRadioButton" data-state={currentAnswer?.answerCode === 'no' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => onSelectAnswer(null, 'no', 'Нет')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
+              <div data-layer="InputContainerRadioButton" data-state={selectedAnswer?.code === 'no' ? 'pressed' : 'not_pressed'} className="Inputcontainerradiobutton" onClick={() => handleAnswerClick(null, 'no', 'Нет')} style={{alignSelf: 'stretch', height: 85, paddingLeft: 20, background: 'white', overflow: 'hidden', borderBottom: '1px #F8E8E8 solid', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'inline-flex', cursor: 'pointer'}}>
                 <div data-layer="Text container" className="TextContainer" style={{flex: '1 1 0', paddingTop: 20, paddingBottom: 20, overflow: 'hidden', justifyContent: 'flex-start', alignItems: 'center', gap: 10, display: 'flex'}}>
                   <div data-layer="Label" className="Label" style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'black', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word'}}>Нет</div>
                 </div>
                 <div data-layer="Radiobutton container" className="RadiobuttonContainer" style={{width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden'}}>
-                  {currentAnswer?.answerCode === 'no' ? (
+                  {selectedAnswer?.code === 'no' ? (
                     <div data-svg-wrapper data-layer="Ellipse-on" className="EllipseOn" style={{left: 35, top: 36, position: 'absolute'}}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <circle cx="7" cy="7" r="6.5" fill="black" stroke="black"/>

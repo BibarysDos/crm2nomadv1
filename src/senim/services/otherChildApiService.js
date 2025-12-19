@@ -1,4 +1,4 @@
-import { getAccessToken, loadApplicationMetadata } from '../../services/storageService';
+import { getAccessToken } from '../../services/storageService';
 import { updateContragent, getProcessInstanceDetails, getContragent } from '../../services/processService';
 import { mapInsuredToContragent, mapLegalRepToContragent } from './contragentService';
 
@@ -133,10 +133,13 @@ export const saveOtherChildToApi = async ({ applicationId, taskId, parentData, c
               existingInsuredId = existingInsured.id;
 
               const existingContragent = await getContragent(existingInsuredId, accessIdForAPI, token);
+              
+              // Передаем existingId в mapInsuredToContragent, чтобы использовать существующий id
+              const childContragentDataWithId = mapInsuredToContragent(childData, 'other-child', null, parentId, existingInsuredId);
 
               const mergedContragentData = {
                 ...existingContragent,
-                ...childContragentData,
+                ...childContragentDataWithId,
                 id: existingInsuredId,
                 identifier: childContragentData.identifier || existingContragent.identifier,
                 contragentRoleCode: childContragentData.contragentRoleCode || existingContragent.contragentRoleCode,

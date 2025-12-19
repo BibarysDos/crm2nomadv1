@@ -59,7 +59,7 @@ const normalizeDate = (dateValue) => {
 
 // Маппинг данных Insured в формат Contragent API
 // insuredType может быть: 'policyholder', 'own-child', 'other-child', 'other-person'
-export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = null, parentId = null) => {
+export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = null, parentId = null, existingId = null) => {
     // Маппинг типов застрахованного на InsuredTypeCode
     const insuredTypeMapping = {
         'policyholder': '3', // Страхователь является Застрахованным
@@ -297,12 +297,14 @@ export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = nul
     const insuredTypeName = insuredTypeNameMapping[insuredTypeCode] || '';
 
     // Извлекаем relationCompanyCode и relationCompanyName из clientType
+    // Тип клиента: "1" - Иные лица, "2" - Работник, "3" - Член семьи
     const relationCompanyCode = getCodeFromDict(data.clientType);
     const relationCompanyName = getNameFromDict(data.clientType);
 
     // Формируем данные контрагента для застрахованного
+    // Если передан existingId, используем его (для обновления), иначе пустой GUID (для создания)
     const contragentData = {
-        id: '00000000-0000-0000-0000-000000000000',
+        id: existingId || '00000000-0000-0000-0000-000000000000',
         identifier: contragentIdentifier,
         longName: longName || '',
         contragentTypeCode: 'individual',
@@ -320,8 +322,11 @@ export const mapInsuredToContragent = (data, insuredType, loadedIdentifier = nul
             InsuredTypeCode: insuredTypeCode,
             insuredTypeCode: insuredTypeCode,
             ...(insuredTypeName ? { insuredTypeName } : {}),
-            ...(relationCompanyCode ? { relationCompanyCode } : {}),
-            ...(relationCompanyName ? { relationCompanyName } : {})
+            // Всегда отправляем relationCompanyCode и relationCompanyName, если clientType указан
+            ...(data.clientType ? {
+                ...(relationCompanyCode ? { relationCompanyCode } : {}),
+                ...(relationCompanyName ? { relationCompanyName } : {})
+            } : {})
         }
     };
 

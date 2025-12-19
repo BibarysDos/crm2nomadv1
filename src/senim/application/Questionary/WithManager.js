@@ -69,7 +69,41 @@ const WithManager = ({
 
     if (answerTypeCode === 'dic' && questionCode) {
       const answers = await loadQuestionAnswers(questionCode);
-      setCurrentQuestionAnswers(answers);
+      
+      // Сортируем ответы: "Да" первым, "Нет" вторым, остальные по порядку
+      const sortedAnswers = [...answers].sort((a, b) => {
+        // Функция для определения приоритета ответа
+        const getPriority = (answer) => {
+          const code = (answer.code || '').toLowerCase();
+          const nameRu = (answer.nameRu || '').toLowerCase();
+          const nameKz = (answer.nameKz || '').toLowerCase();
+          
+          // "Да" - приоритет 1
+          if (code === 'yes' || nameRu.includes('да') || nameRu.includes('согласен') || 
+              nameKz.includes('иә') || nameKz.includes('келісемін')) {
+            return 1;
+          }
+          // "Нет" - приоритет 2
+          if (code === 'no' || nameRu.includes('нет') || nameRu.includes('не согласен') || 
+              nameKz.includes('жоқ') || nameKz.includes('келіспеймін')) {
+            return 2;
+          }
+          // Остальные - приоритет 3
+          return 3;
+        };
+        
+        const priorityA = getPriority(a);
+        const priorityB = getPriority(b);
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        // Если приоритеты одинаковые, сохраняем исходный порядок
+        return 0;
+      });
+      
+      setCurrentQuestionAnswers(sortedAnswers);
     } else {
       setCurrentQuestionAnswers([]);
     }
@@ -801,53 +835,18 @@ const WithManager = ({
                   </div>
                 </div>
               </div>
-              {/* Второе поле - Ответ с тоглом */}
+              {/* Второе поле - Ответ со справочником */}
               <div 
-                data-layer="InputContainerToggleButton" 
-                data-state={(() => {
-                  const isYes = declarationQuestion.answerCode === 'yes' || 
-                    declarationQuestion.answerName === 'Да' || 
-                    declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
-                    (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
-                  return isYes ? "pressed" : "not_pressed";
-                })()}
-                className="Inputcontainertogglebutton" 
+                data-layer="InputContainerDictionaryButton" 
+                data-state={declarationQuestion.answerId || declarationQuestion.answerCode ? "pressed" : "not_pressed"}
+                className="Inputcontainerdictionarybutton" 
                 onClick={async () => {
-                  const currentIsYes = declarationQuestion.answerCode === 'yes' || 
-                    declarationQuestion.answerName === 'Да' || 
-                    declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
-                    (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
-                  
-                  // Загружаем варианты ответов
-                  const answers = await loadQuestionAnswers(declarationQuestion.questionCode || '46');
-                  
-                  if (currentIsYes) {
-                    // Если сейчас "Да", переключаем на "Нет"
-                    const noAnswer = answers.find(a => 
-                      a.code === 'no' || 
-                      a.nameRu === 'Нет' || 
-                      a.nameRu === 'Жоқ. Келіспеймін / Нет. Не согласен' ||
-                      a.nameRu === 'Нет. Не согласен'
-                    );
-                    if (noAnswer) {
-                      updateQuestionAnswer(declarationQuestion.questionId, noAnswer.id, noAnswer.code, 'Нет. Не согласен');
-                    } else {
-                      updateQuestionAnswer(declarationQuestion.questionId, null, 'no', 'Нет. Не согласен');
-                    }
-                  } else {
-                    // Если сейчас "Нет" или нет ответа, переключаем на "Да"
-                    const yesAnswer = answers.find(a => 
-                      a.code === 'yes' || 
-                      a.nameRu === 'Да' || 
-                      a.nameRu === 'Иә. Келісемін / Да. Согласен' ||
-                      a.nameRu === 'Да. Согласен'
-                    );
-                    if (yesAnswer) {
-                      updateQuestionAnswer(declarationQuestion.questionId, yesAnswer.id, yesAnswer.code, 'Да. Согласен');
-                    } else {
-                      updateQuestionAnswer(declarationQuestion.questionId, null, 'yes', 'Да. Согласен');
-                    }
-                  }
+                  // Открываем выбор ответа через handleOpenAnswerSelection
+                  await handleOpenAnswerSelection(
+                    declarationQuestion.questionId, 
+                    declarationQuestion.questionCode || '46', 
+                    declarationQuestion.answerTypeCode || 'dic'
+                  );
                 }}
                 style={{ 
                   alignSelf: 'stretch', 
@@ -856,7 +855,7 @@ const WithManager = ({
                   background: 'white', 
                   overflow: 'hidden', 
                   borderBottom: '1px #F8E8E8 solid', 
-                  justifyContent: 'space-between', 
+                  justifyContent: 'flex-start', 
                   alignItems: 'center', 
                   gap: 10, 
                   display: 'inline-flex', 
@@ -866,35 +865,13 @@ const WithManager = ({
                 <div data-layer="Text field container" className="TextFieldContainer" style={{ flex: '1 1 0', height: 85, paddingTop: 20, paddingBottom: 20, paddingRight: 16, overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 10, display: 'inline-flex' }}>
                   <div data-layer="Label" className="Label" style={{ alignSelf: 'stretch', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#6B6D80', fontSize: 14, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>Ответ</div>
                   <div data-layer="Input text" className="InputText" style={{ justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#071222', fontSize: 16, fontFamily: 'Inter', fontWeight: '500', wordWrap: 'break-word' }}>
-                    {(() => {
-                      const isYes = declarationQuestion.answerCode === 'yes' || 
-                        declarationQuestion.answerName === 'Да' || 
-                        declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
-                        declarationQuestion.answerName === 'Да. Согласен' ||
-                        (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
-                      return isYes ? 'Да. Согласен' : (declarationQuestion.answerId || declarationQuestion.answerCode ? 'Нет. Не согласен' : 'Не заполнено');
-                    })()}
+                    {declarationQuestion.answerName || declarationQuestion.answerCode || 'Не заполнено'}
                   </div>
                 </div>
-                <div data-layer="Switch container" className="SwitchContainer" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
-                  <div data-svg-wrapper data-layer="tui-switches" className="TuiSwitches" style={{ left: 26, top: 35, position: 'absolute' }}>
-                    <svg width="32" height="16" viewBox="0 0 32 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect width="32" height="16" rx="8" fill={(() => {
-                        const isYes = declarationQuestion.answerCode === 'yes' || 
-                          declarationQuestion.answerName === 'Да' || 
-                          declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
-                          declarationQuestion.answerName === 'Да. Согласен' ||
-                          (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
-                        return isYes ? "black" : "#E0E0E0";
-                      })()} />
-                      <circle cx={(() => {
-                        const isYes = declarationQuestion.answerCode === 'yes' || 
-                          declarationQuestion.answerName === 'Да' || 
-                          declarationQuestion.answerName === 'Иә. Келісемін / Да. Согласен' ||
-                          declarationQuestion.answerName === 'Да. Согласен' ||
-                          (declarationQuestion.answerName && declarationQuestion.answerName.toLowerCase().includes('да') && declarationQuestion.answerName.toLowerCase().includes('согласен'));
-                        return isYes ? "24" : "8";
-                      })()} cy="8" r="6" fill="white" />
+                <div data-layer="Open button" className="OpenButton" style={{ width: 85, height: 85, position: 'relative', background: '#FBF9F9', overflow: 'hidden' }}>
+                  <div data-svg-wrapper data-layer="Chewron right" className="ChewronRight" style={{ left: 31, top: 32, position: 'absolute' }}>
+                    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M7 4L15 11.5L7 19" stroke="black" strokeWidth="2" />
                     </svg>
                   </div>
                 </div>
